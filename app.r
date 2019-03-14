@@ -297,6 +297,7 @@ server <- function(input, output, session){
 	})
 		
 		output$AU_data <- DT::renderDataTable({
+		  req(input$aumap_bounds)
 		  if(is.null(input$aumap_shape_click)&is.null(input$aumap_marker_click)){au_dattab=au_data_table}else{
 		    au_dattab <- au_data_table[au_data_table$ASSESS_ID%in%reactive_objects$sel_au,]
 		  }
@@ -316,6 +317,7 @@ server <- function(input, output, session){
 		})
 		
 		output$Site_data <- DT::renderDataTable({
+		  req(input$aumap_bounds)
 		  if(is.null(input$aumap_shape_click)&is.null(input$aumap_marker_click)){site_dattab=site_data_table}else{
 		    site_dattab <- site_data_table[site_data_table$MonitoringLocationName%in%reactive_objects$sel_site,] 
 		  }
