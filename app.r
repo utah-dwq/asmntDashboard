@@ -10,6 +10,7 @@ require(RColorBrewer)
 require(sf)
 require(plyr)
 require(DT)
+require(shinyBS)
 
 
 # Testing/toy data
@@ -116,12 +117,14 @@ ui <-fluidPage(
 				tabsetPanel(id="ui_tab",
 				  tabPanel("Assessment Units",
 				          tags$br(),
-				           actionButton("au_comment","Make AU Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-				           DT::dataTableOutput("AU_data")),
+				           bsButton("au_comment","Make AU Comment",style='primary'),
+				           DT::dataTableOutput("AUdata"),
+				           textAreaInput("au_combox", label = "Make AU Comment Here")),
 					tabPanel("Sites",
 					         tags$br(),
-					         actionButton("site_comment","Make Site Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					         DT::dataTableOutput("Site_data"))
+					         bsButton("site_comment","Make Site Comment",style='primary'),
+					         DT::dataTableOutput("Sitedata"),
+					         textAreaInput("site_combox", label = "Make Site Comment Here"))
 				)),
 		column(6,
 				fluidRow(h4("Individual sites will appear after zooming in to an AU. Click on AU's or sites to populate the AU and site datatable tabs to the left."),
@@ -157,17 +160,8 @@ server <- function(input, output, session){
 	  map_bounds <- input$aumap_bounds
 	  map_bounds <- input$aumap_bounds
 	  if (is.null(map_bounds)){return()}
-	  au_datatable = 
-	  
-	  print(map_bounds)
+	  #print(map_bounds)
 	})
-	
-	# observeEvent(input$zoom_au,{
-	#     map_bounds <- input$aumap_bounds
-	#     if (is.null(map_bounds)){return()}
-	
-	#     print(map_bounds)
-	# })
 
 	# Select au map set up
     aumap = leaflet::createLeafletMap(session, 'aumap')
@@ -187,7 +181,6 @@ server <- function(input, output, session){
   # Original map
     session$onFlushed(once = T, function() {
 		output$aumap <- leaflet::renderLeaflet({
-		  leaflet(options = leafletOptions(zoomControl = FALSE))
 			map = wqTools::buildMap(plot_polys=FALSE)
 			map = addPolygons(map, data=au_poly1,group="Assessment units",smoothFactor=2,fillOpacity = 0.4, layerId=au_poly1$ASSESS_ID,weight=3,color=~pal1(au_poly1$au_colors), options = pathOptions(pane = "au_poly"),
 			                popup=paste0(
@@ -296,8 +289,8 @@ server <- function(input, output, session){
 	  reactive_objects$sel_au = site_data_table$ASSESS_ID[site_data_table$MonitoringLocationName==siteid][1]
 	})
 		
-		output$AU_data <- DT::renderDataTable({
-		  req(input$aumap_bounds)
+		output$AUdata <- DT::renderDataTable({
+		  req(aumap)
 		  if(is.null(input$aumap_shape_click)&is.null(input$aumap_marker_click)){au_dattab=au_data_table}else{
 		    au_dattab <- au_data_table[au_data_table$ASSESS_ID%in%reactive_objects$sel_au,]
 		  }
@@ -316,10 +309,10 @@ server <- function(input, output, session){
 		    )
 		})
 		
-		output$Site_data <- DT::renderDataTable({
-		  req(input$aumap_bounds)
+		output$Sitedata <- DT::renderDataTable({
+		  req(aumap)
 		  if(is.null(input$aumap_shape_click)&is.null(input$aumap_marker_click)){site_dattab=site_data_table}else{
-		    site_dattab <- site_data_table[site_data_table$MonitoringLocationName%in%reactive_objects$sel_site,] 
+		    site_dattab <- site_data_table[site_data_table$MonitoringLocationName%in%reactive_objects$sel_site,]
 		  }
 		  DT::datatable(
 		    site_dattab,
@@ -336,12 +329,23 @@ server <- function(input, output, session){
 		    )
 		  )
 		})
-		# 
+
+observeEvent(input$Sitedata_rows_selected,{
+  updateButton(session, "site_comment", style='danger')
+})
+
 }
 
 
 ## run app
 shinyApp(ui = ui, server = server)
+
+# observeEvent(input$zoom_au,{
+#     map_bounds <- input$aumap_bounds
+#     if (is.null(map_bounds)){return()}
+
+#     print(map_bounds)
+# })
 
 # sitemap <- leafletProxy("aumap")
 # sitemap = setView(sitemap, lng = reactive_objects$aulng, lat = reactive_objects$aulat, zoom = 12)
