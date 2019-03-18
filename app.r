@@ -1,4 +1,4 @@
-### Utah Water Quality Dashboard
+### Assessment Dashboard
 ### Version 1
 
 library(wqTools)
@@ -86,6 +86,10 @@ reviewer_list=append(as.character(unique(au_poly$Reviewer)),c("All",""))
 au_data_table <- unique(compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,c("IR_Year","WMU","ASSESS_ID","AUID_Descr","AUID_Loc","AU_USES",
                                                                                                                   "AU_EPACat","AU_DWQCat","Reviewer")])
 au_data_table$ASSESS_ID=as.character(au_data_table$ASSESS_ID)
+au_data_table$ReviewerFlag=as.factor("Review needed")
+levels(au_data_table$ReviewerFlag)=c("Review needed", "ACCEPT", "EDIT", "RESEGMENT", "REJECT")
+au_data_table$ReviewerComment=""
+
 
 rem_cols <- names(au_data_table)[!names(au_data_table)%in%"ASSESS_ID"]  
 site_data_table <- compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,!names(compiled.dat)%in%rem_cols]
@@ -94,19 +98,24 @@ site_data_table$ASSESS_ID=as.character(site_data_table$ASSESS_ID)
 ##### Need to cast parameter names & uses - these have been removed for now (I think this was killing app table speed).
 site_data_table=unique(site_data_table[,c("MLID","MonitoringLocationName","ASSESS_ID","MLID_DWQCat")])
 
+
 ##################### UI ######################
 ui <-fluidPage(
 
 
+
 	# Header
 	headerPanel(title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85)),
-		windowTitle="Water Quality Dashboard"),
+		windowTitle="Assessment Dashboard"
+	),
 
 	# Title
-	titlePanel("",
-		tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"),
-		tags$title("Water Quality Dashboard"))
-
+	titlePanel("", 
+		tags$head(
+			tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"),
+			tags$style(".modal-dialog{ width:auto}"),
+			tags$style(".modal-body{ min-height:auto}")
+		)
 	),
 
 	#,
@@ -115,7 +124,8 @@ ui <-fluidPage(
 	fluidRow(
 		column(2, selectInput("whodunit", "Select reviewer", choices = reviewer_list, selected = "")),
 		column(2, fileInput("import_save", "Import saved reviews", accept=".csv")),
-		column(2, style = "margin-top: 25px;", downloadButton('export_reviews', "Export reviews", tags$style(type='text/css', "button#export_reviews { margin-bottom: 9px; }")))
+		column(2, style = "margin-top: 25px;", downloadButton('exp_rev', "Export reviews", tags$style(type='text/css', "button#export_reviews { margin-bottom: 9px; }")))
+		#downloadButton('downloadData', "Export reviews")
 	),
 	fluidRow(
 		column(6,
@@ -294,7 +304,6 @@ server <- function(input, output, session){
 	observeEvent(reactive_objects$sel_au,{
 		sel_poly=reactive_objects$au_poly[reactive_objects$au_poly$ASSESS_ID %in% reactive_objects$sel_au,]
 		bbox=st_bbox(sel_poly)
-		#print(bbox)
 		aumap_proxy %>% leaflet::flyToBounds(lng1=paste(bbox[1]), lng2=paste(bbox[3]), lat1=paste(bbox[2]), lat2=paste(bbox[4]))
 	})
 
@@ -311,71 +320,89 @@ server <- function(input, output, session){
 		bbox=st_bbox(site_coords)
 		aumap_proxy %>% leaflet::flyToBounds(lng1=paste(bbox[1]), lng2=paste(bbox[3]), lat1=paste(bbox[2]), lat2=paste(bbox[4]))
     })
+
+
+	# AU comment
+	observeEvent(input$au_comment, {
+		if(is.null(reactive_objects$sel_au)){
+			showModal(modalDialog(title="Error.",size="l",easyClose=T,
+				"Select an assessment unit to make a review comment.")
+			)
+		}
+		req(reactive_objects$sel_au)
+		
+		au_com_table=reactive_objects$au_data_table[reactive_objects$au_data_table$ASSESS_ID == reactive_objects$sel_au,]
+		reactive_objects$au_com_table=au_com_table
+		flag_choices=c("", "REJECT","ACCEPT","EDIT","RESEGMENT")
+		
+		showModal(
+			modalDialog(title="Make a comment.",easyClose=F, footer = NULL,
+				
+					DT::renderDT({
+						DT::datatable(
+							au_com_table, selection='single', rownames=FALSE, filter='none',
+							options = list(paging = FALSE, scrollX='600px', dom="t")
+						)
+					}),
+				
+					selectInput("reviewer", "Select reviewer", choices = reviewer_list, selected = input$whodunit),
+					selectInput("rev_flag", label="Reviewer flag", choices=flag_choices),
+					tags$textarea("Comment...", id = 'rev_comment', style = 'width:50%;'),
+					br(),
+					actionButton("rev_save", "Save", style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
+					actionButton("rev_cancel", "Cancel", style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%')
+					
+				
+				#rhandsontable::rhandsontable(au_com_table,readOnly=TRUE, width = 600, height=600)%>%
+				#	rhandsontable::hot_col(col="ReviewerFlag",type="dropdown",readOnly=FALSE,source=flag_choices)%>%
+				#	rhandsontable::hot_col(col="ReviewerComment",readOnly=FALSE)
+
+			)
+		)
+	})
+
+	# Reviewer save button
+	observeEvent(input$rev_save, {
+		req(input$rev_flag)
+		rev_comment=input$rev_comment
+		#if(rev_comment=="Comment..."){rev_comment="No comment."}
+		au_review_cur=data.frame(reactive_objects$au_com_table, input$rev_flag, input$rev_comment)
+		au_table_cur=reactive_objects$au_data_table
+		au_table_cur=merge(au_table_cur, au_review_cur, all.x=T)
+		
+		au_table_cur=within(au_table_cur, {
+			ReviewerFlag[!is.na(input.rev_flag)]=as.character(input.rev_flag[!is.na(input.rev_flag)])
+			ReviewerComment[!is.na(input.rev_comment)]=as.character(input.rev_comment[!is.na(input.rev_comment)])
+			ReviewerComment[ReviewerComment=="Comment..."]="No comment."
+		})
+		
+		au_table_cur=au_table_cur[,!names(au_table_cur) %in% c("input.rev_flag","input.rev_comment")]
+				
+		reactive_objects$au_data_table=au_table_cur
+		
+		au_table_proxy %>% DT::clearSearch() %>% DT::selectRows(NULL)  %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
+		
+		showModal(modalDialog(title="Saved", "Review saved", size="m", easyClose=T))
+		
+	})
+
+	
+	# Export comments
+
+	au_download=reactive({
+		as.data.frame(reactive_objects$au_data_table[reactive_objects$au_data_table$ReviewerFlag != "Review needed",])
+	})
+	
+	output$exp_rev <- downloadHandler(
+		filename = paste("reviews", Sys.Date(), ".csv", sep=""),
+		content = function(file) {
+			write.csv(au_download(), row.names=FALSE, file)
+		}
+	)
+
+
 }
 
 ## run app
 shinyApp(ui = ui, server = server)
-
-
-
-	
-	###Filter tables for map selected site
-	#observeEvent(reactive_objects$sel_site, ignoreInit=T, {
-	#	sel_au=site_data_table$ASSESS_ID[site_data_table$
-	#	au_table_proxy %>% DT::clearSearch() %>% DT::updateSearch(keywords = list(global = "", columns=c("","","",paste(reactive_objects$sel_au))))
-	#	site_table_proxy %>% DT::clearSearch() %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
-	#})
-	#JV note - skipping for now due to mismatch btwn new IR_MLID & old MLID cols
-	
-
-
-
-
-# sitemap <- leafletProxy("aumap")
-# sitemap = setView(sitemap, lng = reactive_objects$aulng, lat = reactive_objects$aulat, zoom = 12)
-# sitemap=showGroup(sitemap, "Sites")
-# sitemap = addCircleMarkers(aumap, data = site_coords, lat=site_coords$LatitudeMeasure, lng=site_coords$LongitudeMeasure, group="Sites", fill = FALSE, radius = 7, color =~pal1(site_coords$site_colors), options = pathOptions(pane = "markers"),
-#                            popup = paste0(
-#                              "Location ID: ", site_coords$locationID,
-#                              "<br> Name: ", site_coords$locationName,
-#                              "<br> Type: ", site_coords$locationType,
-#                              "<br> Lat: ", site_coords$LatitudeMeasure,
-#                              "<br> Long: ", site_coords$LongitudeMeasure,
-#                              "<br> Category: ", site_coords$MLID_DWQCat))
-# sitemap = hideGroup(sitemap, "AU Info")
-#print(reactive_objects$aulat)
-
-# #Map marker click (to identify selected site)
-# observe({
-# 	site_click <- input$sitemap_marker_click
-# 	if (is.null(site_click)){return()}
-# 	siteid=site_click$id
-# 	reactive_objects$sel_mlid=siteid
-# 	print(site_click$id)
-# })
-# 
-
-
-
-
-
-      #revmap <- leafletProxy("aumap")
-      #revmap <- setView(revmap, lng=-111.547,lat=39.54484,zoom=7)
-      #revmap <- clearMarkers(revmap)
-      #revmap <- clearShapes(revmap)
-      #revmap = addPolygons(revmap, data=au_poly2,group="Assessment units",smoothFactor=2,fillOpacity = 0.4, layerId=au_poly2$ASSESS_ID,weight=3,color=~pal1(au_poly2$au_colors), options = pathOptions(pane = "au_poly"),
-      #                     popup=paste0(
-      #                       "AU name: ", au_poly2$AU_NAME,
-      #                       "<br> AU ID: ", au_poly2$ASSESS_ID,
-      #                       "<br> AU type: ", au_poly2$AU_Type,
-      #                       "<br> Category: ", au_poly2$au_colors)
-      #)
-      #revmap = addCircleMarkers(revmap, data = site_coords1, lat=site_coords1$LatitudeMeasure, lng=site_coords1$LongitudeMeasure, layerId = site_coords1$locationName,group="Sites", weight = 2,fill = TRUE, fillColor =~pal1(site_coords1$site_colors),fillOpacity = 0.5,radius = 7, color =~pal1(site_coords1$site_colors), options = pathOptions(pane = "site_markers"),
-      #                          popup = paste0(
-      #                            "Location ID: ", site_coords1$locationID,
-      #                            "<br> Name: ", site_coords1$locationName,
-      #                            "<br> Type: ", site_coords1$locationType,
-      #                            "<br> Category: ", site_coords1$MLID_DWQCat))
-      #})
-
 
