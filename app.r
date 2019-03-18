@@ -1,5 +1,4 @@
 ### Utah Water Quality Dashboard
-### Jake Vander Laan, Utah DWQ, jvander@utah.gov
 ### Version 1
 
 library(wqTools)
@@ -35,6 +34,8 @@ ns_aus <- compiled.sites[compiled.sites$AU_DWQCat=="Not Supporting"&compiled.sit
 uniq_ns_aus <- unique(ns_aus$ASSESS_ID)
 new_au_imp = sample(uniq_ns_aus, 10) # randomly pick 10 AU's to be "newly impaired" for demo
 compiled.sites$new_au_imp = ifelse(compiled.sites$ASSESS_ID%in%new_au_imp,"YES","NO")
+levels(compiled.sites$AU_DWQCat)=append(levels(compiled.sites$AU_DWQCat),"New Impairment")
+compiled.sites$AU_DWQCat[compiled.sites$new_au_imp=="YES"]="New Impairment"
 
 # Sample Not Supporting sites within "newly impaired" AU's to be "newly impaired" sites.
 compiled_newimp = compiled.sites[compiled.sites$new_au_imp=="YES"&compiled.sites$MLID_DWQCat=="Not Supporting",]
@@ -56,12 +57,12 @@ compiled.sites$site_colors <- factor(compiled.sites$site_colors, levels=c(
   "Supporting"))
 
 # Get AU data for polygon drawing
-narrow.au = unique(compiled.sites[,c("ASSESS_ID","AU_DWQCat","new_au_imp")])
-au_poly1 <- merge(wqTools::au_poly, narrow.au, by="ASSESS_ID")
-au_poly1$au_colors = ifelse(au_poly1$new_au_imp=="YES", "New Impairment", as.character(au_poly1$AU_DWQCat))
-au_poly1$au_colors[au_poly1$au_colors=="Further Investigations Needed: Further Investigations Needed"] = "More Investigation Needed"
-au_poly1$au_colors[au_poly1$au_colors=="Insufficient Data, No Exceedances: Not Assessed"] = "Insufficient Data, No Exceedances"
-au_poly1$au_colors <- factor(au_poly1$au_colors, levels=c(
+narrow.au = unique(compiled.sites[,c("ASSESS_ID","AU_DWQCat","new_au_imp","Reviewer")])
+au_poly <- merge(wqTools::au_poly, narrow.au, by="ASSESS_ID")
+au_poly$au_colors = ifelse(au_poly$new_au_imp=="YES", "New Impairment", as.character(au_poly$AU_DWQCat))
+au_poly$au_colors[au_poly$au_colors=="Further Investigations Needed: Further Investigations Needed"] = "More Investigation Needed"
+au_poly$au_colors[au_poly$au_colors=="Insufficient Data, No Exceedances: Not Assessed"] = "Insufficient Data, No Exceedances"
+au_poly$au_colors <- factor(au_poly$au_colors, levels=c(
     "New Impairment",
     "Not Supporting",
     "Insufficient Data, Exceedances",
@@ -71,31 +72,31 @@ au_poly1$au_colors <- factor(au_poly1$au_colors, levels=c(
     "Supporting"))
 
 # Prep site data for plotting
-site_coords=unique(compiled.sites[,c("MonitoringLocationIdentifier","MonitoringLocationName","MonitoringLocationTypeName","LatitudeMeasure","LongitudeMeasure","site_colors","MLID_DWQCat","IR_MLID")])
-names(site_coords)[names(site_coords)=="MonitoringLocationIdentifier"]="locationID"
-names(site_coords)[names(site_coords)=="MonitoringLocationName"]="locationName"
-names(site_coords)[names(site_coords)=="MonitoringLocationTypeName"]="locationType"
-site_coords1=sf::st_as_sf(site_coords, coords=c("LongitudeMeasure","LatitudeMeasure"), crs=4326, remove=F)
+site_coords=unique(compiled.sites[,c("ASSESS_ID","MonitoringLocationIdentifier","MonitoringLocationName","MonitoringLocationTypeName","LatitudeMeasure","LongitudeMeasure","site_colors","MLID_DWQCat","IR_MLID")])
+# Renaming not necessary because you're adding your own sites manually later - we can give the popups whatever names we want.
+#names(site_coords)[names(site_coords)=="MonitoringLocationIdentifier"]="locationID"
+#names(site_coords)[names(site_coords)=="MonitoringLocationName"]="locationName"
+#names(site_coords)[names(site_coords)=="MonitoringLocationTypeName"]="locationType"
+site_coords=sf::st_as_sf(site_coords, coords=c("LongitudeMeasure","LatitudeMeasure"), crs=4326, remove=F)
 
-# Create reviewer list
-wmu_assign <- as.data.frame(unique(compiled.sites$WMU))
-names(wmu_assign)[names(wmu_assign)=="unique(compiled.sites$WMU)"] <- "WMU"
-wmu_assign$num <- sample(1:3,10, replace=TRUE)
-wmu_assign$reviewer <- "Jake"
-wmu_assign$reviewer[wmu_assign$num==2] <- "Elise"
-wmu_assign$reviewer[wmu_assign$num==3] <- "Emilie"
-
-review_assign <- merge(compiled.sites[,c("WMU","ASSESS_ID","IR_MLID")], wmu_assign)
+# Create reviewer list (JV Note - I assigned these in the .csv which I think is how this will play out in the future.)
+reviewer_list=append(as.character(unique(au_poly$Reviewer)),c("All",""))
 
 # Original data to be in data tables
-au_data_table <- unique(compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,c("IR_Year","WMU","Agency","ASSESS_ID","AUID_Descr","AUID_Loc","AU_USES",
-                                                                                                                  "AU_EPACat","AU_DWQCat")])
+au_data_table <- unique(compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,c("IR_Year","WMU","ASSESS_ID","AUID_Descr","AUID_Loc","AU_USES",
+                                                                                                                  "AU_EPACat","AU_DWQCat","Reviewer")])
+au_data_table$ASSESS_ID=as.character(au_data_table$ASSESS_ID)
 
 rem_cols <- names(au_data_table)[!names(au_data_table)%in%"ASSESS_ID"]  
 site_data_table <- compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,!names(compiled.dat)%in%rem_cols]
+site_data_table$ASSESS_ID=as.character(site_data_table$ASSESS_ID)
+
+##### Need to cast parameter names & uses - these have been removed for now (I think this was killing app table speed).
+site_data_table=unique(site_data_table[,c("MLID","MonitoringLocationName","ASSESS_ID","MLID_DWQCat")])
 
 ##################### UI ######################
 ui <-fluidPage(
+
 
 	# Header
 	headerPanel(title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85)),
@@ -105,30 +106,41 @@ ui <-fluidPage(
 	titlePanel("",
 		tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"),
 		tags$title("Water Quality Dashboard"))
+
 	),
 
 	#,
 
 	# Input widgets
 	fluidRow(
+		column(2, selectInput("whodunit", "Select reviewer", choices = reviewer_list, selected = "")),
+		column(2, fileInput("import_save", "Import saved reviews", accept=".csv")),
+		column(2, style = "margin-top: 25px;", downloadButton('export_reviews', "Export reviews", tags$style(type='text/css', "button#export_reviews { margin-bottom: 9px; }")))
+	),
+	fluidRow(
 		column(6,
-        fluidRow(selectInput("whodunit","Reviewer Name", choices = c("All sites", "Elise","Jake","Emilie"), selected = "All sites")),
-				tabsetPanel(id="ui_tab",
-				  tabPanel("Assessment Units",
-				          tags$br(),
-				           actionButton("au_comment","Make AU Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-				           DT::dataTableOutput("AU_data")),
-					tabPanel("Sites",
-					         tags$br(),
-					         actionButton("site_comment","Make Site Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					         DT::dataTableOutput("Site_data"))
-				)),
+			tabsetPanel(id="ui_tab",
+				tabPanel("Assessment Units",
+					tags$br(),
+					actionButton("au_comment","Make AU Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
+					actionButton("au_table_filter_clear","Clear table filters",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
+					div(DT::DTOutput("AU_data"), style = "font-size:70%")
+				),
+				tabPanel("Sites",
+					tags$br(),
+					actionButton("site_comment","Make Site Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
+					actionButton("site_table_filter_clear","Clear table filters",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
+					div(DT::DTOutput("Site_data"), style = "font-size:70%")
+				)
+			)
+		),
 		column(6,
 				fluidRow(h4("Individual sites will appear after zooming in to an AU. Click on AU's or sites to populate the AU and site datatable tabs to the left."),
-				          fluidRow(column(6,checkboxInput("zoom_au", label = "Enable data table zoom control"))
+				          #fluidRow(column(6,checkboxInput("zoom_au", label = "Enable data table zoom control"))
+				          fluidRow(column(6,actionButton("reset_zoom", label = "Reset map zoom",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'))
 				                   ),      
 				          fluidRow(shinycssloaders::withSpinner(leaflet::leafletOutput("aumap", height="600px"),size=2, color="#0080b7")))
-)
+		)
 	)
 )
 
@@ -136,81 +148,93 @@ ui <-fluidPage(
 
 server <- function(input, output, session){
 
-  # Loading modal to keep user out of trouble while map draws...
-  showModal(modalDialog(title="MAP LOADING - PLEASE WAIT...","Please wait for map to draw before proceeding.",size="l",footer=NULL))
-  
-  # Remove modal when app is ready
-  observe({
-  req(aumap)
-  removeModal()
-  })
+#  # Loading modal to keep user out of trouble while app loads & draws...
+#  showModal(modalDialog(title="LOADING - PLEASE WAIT...",size="l",footer=NULL))
+#  
+#	# Remove modal when app is ready
+#	observe({
+#		req(reactive_objects$map_done, reactive_objects$site_data_table,reactive_objects$au_data_table)
+#		removeModal()
+#	})
 
-	# Empty reactive values object
-	reactive_objects=reactiveValues()
-	
-	# AU centroids
-	au_centroids=suppressWarnings(sf::st_centroid(au_poly1))
-	au_centroids=cbind(au_centroids,sf::st_coordinates(au_centroids))
-	
-	# initial datatable data - AU
-	observe({
-	  map_bounds <- input$aumap_bounds
-	  map_bounds <- input$aumap_bounds
-	  if (is.null(map_bounds)){return()}
-	  au_datatable = 
-	  
-	  print(map_bounds)
-	})
-	
-	# observeEvent(input$zoom_au,{
-	#     map_bounds <- input$aumap_bounds
-	#     if (is.null(map_bounds)){return()}
-	
-	#     print(map_bounds)
-	# })
-
-	# Select au map set up
-    aumap = leaflet::createLeafletMap(session, 'aumap')
+  # Empty reactive values object
+  reactive_objects=reactiveValues()
+ 
+  # Select sites and polygons based on reviewer selected to populate tables & map
+    observe({
+      req(input$whodunit)
+	  reviewer <- input$whodunit
+      if(reviewer=="All"){
+        reactive_objects$au_poly = au_poly
+		reactive_objects$au_data_table=au_data_table
+        reactive_objects$site_coords = site_coords
+		reactive_objects$site_data_table=site_data_table
+      }else{
+		if(reviewer!=""){
+          reactive_objects$au_poly = au_poly[au_poly$Reviewer==reviewer,]
+		  reactive_objects$au_data_table=au_data_table[au_data_table$Reviewer==reviewer,]
+          reactive_objects$site_coords = site_coords[site_coords$ASSESS_ID %in% reactive_objects$au_poly$ASSESS_ID,]
+		  reactive_objects$site_data_table=site_data_table[site_data_table$ASSESS_ID %in% reactive_objects$au_poly$ASSESS_ID,]
+		}
+	  }
+	 })
+	 
   
   # Select map colors
-    pal <- RColorBrewer::brewer.pal(length(unique(au_poly1$au_colors)),"Spectral")
-    pal1 = leaflet::colorFactor(pal, domain=au_poly1$au_colors)
-  
-  # Only show sites at a particular zoom
-    observeEvent(input$aumap_zoom,{
-      map_zoom <- input$aumap_zoom
-      if(map_zoom<=9){
-        leafletProxy("aumap") %>% leaflet::hideGroup("Sites")
-      }else{leafletProxy("aumap") %>% leaflet::showGroup("Sites")}
-    })
+  pal <- RColorBrewer::brewer.pal(length(unique(au_poly$au_colors)),"Spectral")
+  pal1 = leaflet::colorFactor(pal, domain=au_poly$au_colors)
+  	
+	# AU data table output
+	output$AU_data <- DT::renderDT({
+		req(reactive_objects$au_data_table)
+			DT::datatable(
+				reactive_objects$au_data_table, selection='single', rownames=FALSE, filter="top",
+					options = list(scrollY = '600px', paging = FALSE, scrollX=TRUE, dom="ltipr")
+			)
+		})
+	outputOptions(output, "AU_data", suspendWhenHidden = FALSE)
+	
+	# Site data table output
+	output$Site_data <- DT::renderDT({
+		req(reactive_objects$site_data_table)
+			DT::datatable(
+				reactive_objects$site_data_table, selection='single', rownames=FALSE, filter="top",
+					options = list(scrollY = '600px', paging = FALSE, scrollX=TRUE, dom="ltipr")
+			)
+	})
+	outputOptions(output, "Site_data", suspendWhenHidden = FALSE)
 
-  # Original map
+  # Select au map set up
+  aumap = leaflet::createLeafletMap(session, 'aumap')
+  # map
     session$onFlushed(once = T, function() {
 		output$aumap <- leaflet::renderLeaflet({
-		  leaflet(options = leafletOptions(zoomControl = FALSE))
-			map = wqTools::buildMap(plot_polys=FALSE)
-			map = addPolygons(map, data=au_poly1,group="Assessment units",smoothFactor=2,fillOpacity = 0.4, layerId=au_poly1$ASSESS_ID,weight=3,color=~pal1(au_poly1$au_colors), options = pathOptions(pane = "au_poly"),
+			req(reactive_objects$site_coords)
+			map = wqTools::buildMap(plot_polys=FALSE, search="")
+			map=addMapPane(map,"au_poly", zIndex = 425)
+			map = addPolygons(map, data=reactive_objects$au_poly,group="Assessment units",smoothFactor=2,opacity=0.9, fillOpacity = 0.1, layerId=reactive_objects$au_poly$ASSESS_ID,weight=3,color=~pal1(reactive_objects$au_poly$au_colors), options = pathOptions(pane = "au_poly"),
 			                popup=paste0(
-			                  "AU name: ", au_poly1$AU_NAME,
-			                  "<br> AU ID: ", au_poly1$ASSESS_ID,
-			                  "<br> AU type: ", au_poly1$AU_Type,
-			                  "<br> Category: ", au_poly1$au_colors)
+			                  "AU name: ", reactive_objects$au_poly$AU_NAME,
+			                  "<br> AU ID: ", reactive_objects$au_poly$ASSESS_ID,
+			                  "<br> AU type: ", reactive_objects$au_poly$AU_Type,
+			                  "<br> Category: ", reactive_objects$au_poly$au_colors)
 			)
-			map = addPolygons(map, data=bu_poly,group="Beneficial uses",smoothFactor=4,fillOpacity = 0.1,weight=3,color="green", options = pathOptions(pane = "underlay_polygons"),
+			map = addPolygons(map, data=bu_poly,group="Beneficial uses",smoothFactor=4,opacity=0.9, ,fillOpacity = 0.1,weight=3,color="green", options = pathOptions(pane = "underlay_polygons"),
 			                popup=paste0(
 			                  "Description: ", bu_poly$R317Descrp,
 			                  "<br> Uses: ", bu_poly$bu_class)
 			)
-			map = addPolygons(map, data=ss_poly,group="Site-specific standards",smoothFactor=2,fillOpacity = 0.2,weight=3,color="blue", options = pathOptions(pane = "underlay_polygons"),
+			map = addPolygons(map, data=ss_poly,group="Site-specific standards",smoothFactor=2,opacity=0.9, ,fillOpacity = 0.1,weight=3,color="blue", options = pathOptions(pane = "underlay_polygons"),
 			                popup=paste0("SS std: ", ss_poly$SiteSpecif)
 			)
-      map=addMapPane(map,"site_markers", zIndex = 450)
-			map = addCircleMarkers(map, data = site_coords, lat=site_coords$LatitudeMeasure, lng=site_coords$LongitudeMeasure, layerId = site_coords$locationName,group="Sites", weight = 2,fill = TRUE, fillColor =~pal1(site_coords$site_colors),fillOpacity = 0.5,radius = 7, color =~pal1(site_coords$site_colors), options = pathOptions(pane = "site_markers"),
+			map=addMapPane(map,"site_markers", zIndex = 450)
+			map = addCircleMarkers(map, data = reactive_objects$site_coords, lat=reactive_objects$site_coords$LatitudeMeasure, lng=reactive_objects$site_coords$LongitudeMeasure, layerId = reactive_objects$site_coords$IR_MLID,group="Sites",
+				weight = 5, fill = TRUE, opacity=0.95, fillOpacity = 0.5, fillColor =~pal1(reactive_objects$site_coords$site_colors),radius = 12, color =~pal1(reactive_objects$site_coords$site_colors), options = pathOptions(pane = "site_markers"),
 			                           popup = paste0(
-			                             "Location ID: ", site_coords$locationID,
-			                             "<br> Name: ", site_coords$locationName,
-			                             "<br> Type: ", site_coords$locationType,
-			                             "<br> Category: ", site_coords$MLID_DWQCat))
+			                             "MLID: ", reactive_objects$site_coords$MonitoringLocationIdentifier,
+			                             "<br> ML Name: ", reactive_objects$site_coords$MonitoringLocationName,
+			                             "<br> Type: ", reactive_objects$site_coords$locationType,
+			                             "<br> Category: ", reactive_objects$site_coords$MLID_DWQCat))
 			map = leaflet::addLayersControl(map,
 			                              position ="topleft",
 			                              baseGroups = c("Topo","Satellite"),overlayGroups = c("Sites","Assessment units","Beneficial uses", "Site-specific standards"),
@@ -221,127 +245,91 @@ server <- function(input, output, session){
 			map=hideGroup(map, "Beneficial uses") 
 			map=removeMeasure(map)
 			map=leaflet::addLegend(map, position = 'topright',
-			                       colors = unique(pal1(au_poly1$au_colors)), 
-			                       labels = unique(au_poly1$au_colors))
+			                       colors = unique(pal1(au_poly$au_colors)), 
+			                       labels = unique(au_poly$au_colors))
 		})
+		reactive_objects$map_done=1
     })
 
     
-    # Select sites and polygons based on reviewer selected
-    observe({
-      reviewer <- input$whodunit
-      if(reviewer=="All sites"){
-        au_poly2 = au_poly1
-        site_coords1 = site_coords
-      }else{
-        review_dat <- review_assign[review_assign$reviewer==reviewer,]
-        review_sites <- review_dat$IR_MLID
-        review_aus <- unique(review_dat$ASSESS_ID)
-        au_poly2 = au_poly1[au_poly1$ASSESS_ID%in%review_aus,]
-        site_coords1 = site_coords[site_coords$IR_MLID%in%review_sites,]
-      }
-      revmap <- leafletProxy("aumap")
-      revmap <- setView(revmap, lng=-111.547,lat=39.54484,zoom=7)
-      revmap <- clearMarkers(revmap)
-      revmap <- clearShapes(revmap)
-      revmap = addPolygons(revmap, data=au_poly2,group="Assessment units",smoothFactor=2,fillOpacity = 0.4, layerId=au_poly2$ASSESS_ID,weight=3,color=~pal1(au_poly2$au_colors), options = pathOptions(pane = "au_poly"),
-                           popup=paste0(
-                             "AU name: ", au_poly2$AU_NAME,
-                             "<br> AU ID: ", au_poly2$ASSESS_ID,
-                             "<br> AU type: ", au_poly2$AU_Type,
-                             "<br> Category: ", au_poly2$au_colors)
-      )
-      revmap = addCircleMarkers(revmap, data = site_coords1, lat=site_coords1$LatitudeMeasure, lng=site_coords1$LongitudeMeasure, layerId = site_coords1$locationName,group="Sites", weight = 2,fill = TRUE, fillColor =~pal1(site_coords1$site_colors),fillOpacity = 0.5,radius = 7, color =~pal1(site_coords1$site_colors), options = pathOptions(pane = "site_markers"),
-                                popup = paste0(
-                                  "Location ID: ", site_coords1$locationID,
-                                  "<br> Name: ", site_coords1$locationName,
-                                  "<br> Type: ", site_coords1$locationType,
-                                  "<br> Category: ", site_coords1$MLID_DWQCat))
-      })
-    
- #### Working on data table stuff #####   
-    # Bounding function
-    in_bounding_box <- function(data, lat, long, bounds) {
-      data %>%
-        dplyr::filter(
-          lat > bounds$south &
-            lat < bounds$north &
-            long < bounds$east & long > bounds$west
-        )
-    }
-    
-    # data_map <- reactive({
-    #   if (is.null(input$aumap_bounds)) {
-    #     NULL
-    #   } else {
-    #     bounds <- input$aumap_bounds
-    #     blah <- in_bounding_box(site_coords, site_coords$LatitudeMeasure, site_coords$LatitudeMeasure, bounds)
-    #      }
-    # })
-    
-	# Map polygon click
+	# Map polygon click to select an AU
 	observe({
-		au_click <- input$aumap_shape_click
-		if (is.null(au_click)){return()}
-		auid=au_click$id
-		reactive_objects$sel_au = auid
-		reactive_objects$sel_site = site_data_table$MonitoringLocationName[site_data_table$ASSESS_ID%in%auid]})
+		reactive_objects$sel_au = input$aumap_shape_click$id
+	})
 	
 	# Map site click
 	observe({
-	  site_click <- input$aumap_marker_click
-	  if (is.null(site_click)){return()}
-	  siteid=site_click$id
-	  reactive_objects$sel_site = siteid
-	  reactive_objects$sel_au = site_data_table$ASSESS_ID[site_data_table$MonitoringLocationName==siteid][1]
+		reactive_objects$sel_site = input$aumap_marker_click$id
 	})
-		
-		output$AU_data <- DT::renderDataTable({
-		  req(input$aumap_bounds)
-		  if(is.null(input$aumap_shape_click)&is.null(input$aumap_marker_click)){au_dattab=au_data_table}else{
-		    au_dattab <- au_data_table[au_data_table$ASSESS_ID%in%reactive_objects$sel_au,]
-		  }
-		  DT::datatable(
-		    au_dattab,
-		    rownames=FALSE,
-		    style = "bootstrap",
-		    class = "compact",
-		    filter = 'top',
-		    width = "100%",
-		    options = list(
-		      pageLength = 100,
-		      scrollX = TRUE,
-		      scrollY = 400,
-		      dom = 't')
-		    )
-		})
-		
-		output$Site_data <- DT::renderDataTable({
-		  req(input$aumap_bounds)
-		  if(is.null(input$aumap_shape_click)&is.null(input$aumap_marker_click)){site_dattab=site_data_table}else{
-		    site_dattab <- site_data_table[site_data_table$MonitoringLocationName%in%reactive_objects$sel_site,] 
-		  }
-		  DT::datatable(
-		    site_dattab,
-		    rownames=FALSE,
-		    style = "bootstrap",
-		    class = "compact",
-		    filter = 'top',
-		    width = "100%",
-		    options = list(
-		      pageLength = 100,
-		      scrollX = TRUE,
-		      scrollY = 400,
-		      dom = 't'
-		    )
-		  )
-		})
-		# 
-}
+	
+	# Table proxies
+	au_table_proxy = DT::dataTableProxy('AU_data')
+	site_table_proxy = DT::dataTableProxy('Site_data')
+	
+	# Clear table filter buttons
+	observeEvent(input$au_table_filter_clear, ignoreInit=T,{
+		au_table_proxy %>% DT::clearSearch()
+	})
+	
+	observeEvent(input$site_table_filter_clear, ignoreInit=T,{
+		site_table_proxy %>% DT::clearSearch()
+	})
+	
+	##Filter tables for map selected AU
+	observeEvent(reactive_objects$sel_au, ignoreInit=T, {
+		au_table_proxy %>% DT::clearSearch() %>% DT::selectRows(NULL)  %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
+		site_table_proxy %>% DT::clearSearch() %>% DT::selectRows(NULL) %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
+	})
+	
+	
+	# AU table row click
+	observeEvent(input$AU_data_rows_selected, {
+		reactive_objects$sel_au=reactive_objects$au_data_table[input$AU_data_rows_selected, "ASSESS_ID"]
+	})
 
+	# Map proxy
+	aumap_proxy=leaflet::leafletProxy("aumap")
+	
+	# Zoom to AU on au table click
+	observeEvent(reactive_objects$sel_au,{
+		sel_poly=reactive_objects$au_poly[reactive_objects$au_poly$ASSESS_ID %in% reactive_objects$sel_au,]
+		bbox=st_bbox(sel_poly)
+		#print(bbox)
+		aumap_proxy %>% leaflet::flyToBounds(lng1=paste(bbox[1]), lng2=paste(bbox[3]), lat1=paste(bbox[2]), lat2=paste(bbox[4]))
+	})
+
+	# Only show sites at a particular zoom
+    observeEvent(input$aumap_zoom,{
+      map_zoom <- input$aumap_zoom
+	  if(map_zoom<=8){
+        aumap_proxy %>% leaflet::hideGroup("Sites")
+      }else{aumap_proxy %>% leaflet::showGroup("Sites")}
+    })
+
+	# Reset map zoom button
+    observeEvent(input$reset_zoom,{
+		bbox=st_bbox(site_coords)
+		aumap_proxy %>% leaflet::flyToBounds(lng1=paste(bbox[1]), lng2=paste(bbox[3]), lat1=paste(bbox[2]), lat2=paste(bbox[4]))
+    })
+}
 
 ## run app
 shinyApp(ui = ui, server = server)
+
+
+
+	
+	###Filter tables for map selected site
+	#observeEvent(reactive_objects$sel_site, ignoreInit=T, {
+	#	sel_au=site_data_table$ASSESS_ID[site_data_table$
+	#	au_table_proxy %>% DT::clearSearch() %>% DT::updateSearch(keywords = list(global = "", columns=c("","","",paste(reactive_objects$sel_au))))
+	#	site_table_proxy %>% DT::clearSearch() %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
+	#})
+	#JV note - skipping for now due to mismatch btwn new IR_MLID & old MLID cols
+	
+
+
+
 
 # sitemap <- leafletProxy("aumap")
 # sitemap = setView(sitemap, lng = reactive_objects$aulng, lat = reactive_objects$aulat, zoom = 12)
@@ -366,4 +354,28 @@ shinyApp(ui = ui, server = server)
 # 	print(site_click$id)
 # })
 # 
+
+
+
+
+
+      #revmap <- leafletProxy("aumap")
+      #revmap <- setView(revmap, lng=-111.547,lat=39.54484,zoom=7)
+      #revmap <- clearMarkers(revmap)
+      #revmap <- clearShapes(revmap)
+      #revmap = addPolygons(revmap, data=au_poly2,group="Assessment units",smoothFactor=2,fillOpacity = 0.4, layerId=au_poly2$ASSESS_ID,weight=3,color=~pal1(au_poly2$au_colors), options = pathOptions(pane = "au_poly"),
+      #                     popup=paste0(
+      #                       "AU name: ", au_poly2$AU_NAME,
+      #                       "<br> AU ID: ", au_poly2$ASSESS_ID,
+      #                       "<br> AU type: ", au_poly2$AU_Type,
+      #                       "<br> Category: ", au_poly2$au_colors)
+      #)
+      #revmap = addCircleMarkers(revmap, data = site_coords1, lat=site_coords1$LatitudeMeasure, lng=site_coords1$LongitudeMeasure, layerId = site_coords1$locationName,group="Sites", weight = 2,fill = TRUE, fillColor =~pal1(site_coords1$site_colors),fillOpacity = 0.5,radius = 7, color =~pal1(site_coords1$site_colors), options = pathOptions(pane = "site_markers"),
+      #                          popup = paste0(
+      #                            "Location ID: ", site_coords1$locationID,
+      #                            "<br> Name: ", site_coords1$locationName,
+      #                            "<br> Type: ", site_coords1$locationType,
+      #                            "<br> Category: ", site_coords1$MLID_DWQCat))
+      #})
+
 
