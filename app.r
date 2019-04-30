@@ -1,5 +1,5 @@
 ### Assessment Dashboard
-### Version 1
+### Version 2
 
 library(wqTools)
 library(magrittr)
@@ -11,114 +11,20 @@ require(plyr)
 require(DT)
 
 
-# Testing/toy data
-compiled.dat <- read.csv("compiled_assessment_file_final2016ir.csv")
-compiled.dat <- compiled.dat[!compiled.dat$MLID_DWQCat=="do not report",]
-master.site.file <- read.csv("wqp_master_site_file.csv")
-
-# Make names same as master site file so can be merged.
-names(compiled.dat)[names(compiled.dat)=="MLID_NAME"] <- "MonitoringLocationName"
-names(compiled.dat)[names(compiled.dat)=="AUID"] <- "ASSESS_ID"
-compiled.dat$ASSESS_ID = as.factor(paste(compiled.dat$ASSESS_ID, "00", sep="_"))
-
-# Isolate accepted sites from master site file for example
-compiled.dat <- merge(compiled.dat,unique(master.site.file[,c("IR_FLAG","MonitoringLocationName")]), all.x = TRUE)
-compiled.dat <- compiled.dat[!is.na(compiled.dat$IR_FLAG)&compiled.dat$IR_FLAG=="ACCEPT",]
-
-# Keep only sites that have a match within the master site file (MLID conventions totally different, so went with Monitoring Location Name)
-# EH note: I think there are some mis-matched AU/site combos between the master site file and the compiled file. I got rid of those for now (you'll see the number of rows decrease after this next line). Merging on all leads to odd NA lat/long for sites (combos that don't exist in master site file).
-compiled.sites <- merge(compiled.dat,master.site.file, by=c("ASSESS_ID","MonitoringLocationName"))
-
-# Sample Not Supporting AUs for "New Impairment" demo
-ns_aus <- compiled.sites[compiled.sites$AU_DWQCat=="Not Supporting"&compiled.sites$MLID_DWQCat=="Not Supporting",] # Need to also have a not supporting site to be deemed a "new" impairment
-uniq_ns_aus <- unique(ns_aus$ASSESS_ID)
-new_au_imp = sample(uniq_ns_aus, 10) # randomly pick 10 AU's to be "newly impaired" for demo
-compiled.sites$new_au_imp = ifelse(compiled.sites$ASSESS_ID%in%new_au_imp,"YES","NO")
-levels(compiled.sites$AU_DWQCat)=append(levels(compiled.sites$AU_DWQCat),"New Impairment")
-compiled.sites$AU_DWQCat[compiled.sites$new_au_imp=="YES"]="New Impairment"
-
-# Sample Not Supporting sites within "newly impaired" AU's to be "newly impaired" sites.
-compiled_newimp = compiled.sites[compiled.sites$new_au_imp=="YES"&compiled.sites$MLID_DWQCat=="Not Supporting",]
-samplesite <- function(x){as.character(sample(x$MonitoringLocationIdentifier,1))}
-new_site_imp = ddply(compiled_newimp,c("ASSESS_ID"),.fun=samplesite)
-compiled.sites$new_site_imp = ifelse(compiled.sites$MonitoringLocationIdentifier%in%new_site_imp$V1, "YES","NO")
-
-# Change identifying info for site map labels/colors 
-compiled.sites$site_colors = ifelse(compiled.sites$new_site_imp=="YES", "New Impairment", as.character(compiled.sites$MLID_DWQCat))
-compiled.sites$site_colors[compiled.sites$site_colors=="Further Investigations Needed: Further Investigations Needed"] = "More Investigation Needed"
-compiled.sites$site_colors[compiled.sites$site_colors=="Insufficient Data, No Exceedances: Not Assessed"] = "Insufficient Data, No Exceedances"
-compiled.sites$site_colors <- factor(compiled.sites$site_colors, levels=c(
-  "New Impairment",
-  "Not Supporting",
-  "Insufficient Data, Exceedances",
-  "More Investigation Needed",
-  "Insufficient Data, No Exceedances",
-  "No Evidence of Impairment",
-  "Supporting"))
-
-# Get AU data for polygon drawing
-narrow.au = unique(compiled.sites[,c("ASSESS_ID","AU_DWQCat","new_au_imp","Reviewer")])
-au_poly <- merge(wqTools::au_poly, narrow.au, by="ASSESS_ID")
-au_poly$au_colors = ifelse(au_poly$new_au_imp=="YES", "New Impairment", as.character(au_poly$AU_DWQCat))
-au_poly$au_colors[au_poly$au_colors=="Further Investigations Needed: Further Investigations Needed"] = "More Investigation Needed"
-au_poly$au_colors[au_poly$au_colors=="Insufficient Data, No Exceedances: Not Assessed"] = "Insufficient Data, No Exceedances"
-au_poly$au_colors <- factor(au_poly$au_colors, levels=c(
-    "New Impairment",
-    "Not Supporting",
-    "Insufficient Data, Exceedances",
-    "More Investigation Needed",
-    "Insufficient Data, No Exceedances",
-    "No Evidence of Impairment",
-    "Supporting"))
-
-# Prep site data for plotting
-site_coords=unique(compiled.sites[,c("ASSESS_ID","MonitoringLocationIdentifier","MonitoringLocationName","MonitoringLocationTypeName","LatitudeMeasure","LongitudeMeasure","site_colors","MLID_DWQCat","IR_MLID")])
-# Renaming not necessary because you're adding your own sites manually later - we can give the popups whatever names we want.
-#names(site_coords)[names(site_coords)=="MonitoringLocationIdentifier"]="locationID"
-#names(site_coords)[names(site_coords)=="MonitoringLocationName"]="locationName"
-#names(site_coords)[names(site_coords)=="MonitoringLocationTypeName"]="locationType"
-site_coords=sf::st_as_sf(site_coords, coords=c("LongitudeMeasure","LatitudeMeasure"), crs=4326, remove=F)
-
-# Create reviewer list (JV Note - I assigned these in the .csv which I think is how this will play out in the future.)
-reviewer_list=append(as.character(unique(au_poly$Reviewer)),c("All",""))
-
-# Original data to be in data tables
-au_data_table <- unique(compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,c("IR_Year","WMU","ASSESS_ID","AUID_Descr","AUID_Loc","AU_USES",
-                                                                                                                  "AU_EPACat","AU_DWQCat","Reviewer")])
-au_data_table$ASSESS_ID=as.character(au_data_table$ASSESS_ID)
-au_data_table$ReviewerFlag=as.factor("Review needed")
-levels(au_data_table$ReviewerFlag)=c("Review needed", "ACCEPT", "EDIT", "RESEGMENT", "REJECT")
-au_data_table$ReviewerComment=""
-
-
-rem_cols <- names(au_data_table)[!names(au_data_table)%in%"ASSESS_ID"]  
-site_data_table <- compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,!names(compiled.dat)%in%rem_cols]
-site_data_table$ASSESS_ID=as.character(site_data_table$ASSESS_ID)
-
-##### Need to cast parameter names & uses - these have been removed for now (I think this was killing app table speed).
-site_data_table=unique(site_data_table[,c("MLID","MonitoringLocationName","ASSESS_ID","MLID_DWQCat")])
-
+# Import assessments
+setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard')
+site_use_param_asmnt=read.csv('data/site-use-param-asmnt.csv')
+site_param_asmnt=irTools::rollUp(list(site_use_param_asmnt), group_vars=c('IR_MLID','IR_MLNAME','IR_Lat','IR_Long','ASSESS_ID','AU_NAME','R3172ParameterName'), cat_var="AssessCat", print=F, expand_uses=F)
+au_param_asmnt=irTools::rollUp(list(site_use_param_asmnt), group_vars=c('ASSESS_ID','AU_NAME','R3172ParameterName'), cat_var="AssessCat", print=F, expand_uses=F)
+au_asmnt=irTools::rollUp(list(site_use_param_asmnt), group_vars=c('ASSESS_ID','AU_NAME'), cat_var="AssessCat", print=F, expand_uses=F)
 
 ##################### UI ######################
 ui <-fluidPage(
-
-
-
-	# Header
-	headerPanel(title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85)),
-		windowTitle="Assessment Dashboard"
-	),
-
-	# Title
-	titlePanel("", 
-		tags$head(
-			tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"),
-			tags$style(".modal-dialog{ width:auto}"),
-			tags$style(".modal-body{ min-height:auto}")
-		)
-	),
-
-	#,
+# Header
+headerPanel(
+	title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85), target="_blank"),
+	tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="WQ Assessment Dashboard")
+),
 
 	# Input widgets
 	fluidRow(
