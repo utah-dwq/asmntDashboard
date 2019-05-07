@@ -67,7 +67,8 @@ ui <-fluidPage(
 					column(2, h4('Start date'), dateInput('StartDate', '', format='mm/dd/yyyy')),
 					column(2, h4('End date'), dateInput('EndDate', '', format='mm/dd/yyyy'))
 				),
-				actionButton('dwnld_wqp', 'Download WQP data', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('download'))
+				uiOutput('wqp_url')
+				#actionButton('dwnld_wqp', 'Download WQP data', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('download'))
 			)
 		)
 	)
@@ -160,19 +161,13 @@ observeEvent(input$example_input, {
 	showModal(urlModal('https://github.com/utah-dwq/asmntDashboard/blob/version2/data/site-use-param-asmnt.csv', title = "Example data", subtitle = "An example data input for this application can be downloaded at this link."))
 })
 
-# Download WQP data for sites (not yet working)
-observeEvent(input$dwnld_wqp, ignoreInit=T, {
-	req(reactive_objects$sel_sites)
-	data=wqTools::readWQP(start_date=input$StartDate, end_date=input$EndDate, type='result', siteid=reactive_objects$sel_sites)
-	#output$dwnld_wqp <- downloadHandler(
-	#	filename=paste0('wqp-result-', Sys.Date(),'.xlsx'),
-	#	content = function(file) {writexl::write_xlsx(
-	#		list(data=data),
-	#		path = file, format_headers=F, col_names=T)}
-	#)
+# Download WQP data for sites
+observe({
+	if(!is.null(reactive_objects$sel_sites)){
+		reactive_objects$wqp_url=wqTools::readWQP(start_date=input$StartDate, end_date=input$EndDate, type='result', siteid=reactive_objects$sel_sites, url_only=T)
+	}
 })
-
-
+output$wqp_url <-renderUI(a(href=paste0(reactive_objects$wqp_url),"Download WQP data",target="_blank"))
 
 
 }
