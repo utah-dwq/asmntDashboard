@@ -61,6 +61,13 @@ ui <-fluidPage(
 				fluidRow(downloadButton('exp_dt', label = "Export data table", icon='download', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%')),
 				br(),
 				fluidRow(div(DT::DTOutput("dt"), style = list("font-size:65%")))
+			),
+			bsCollapsePanel(list(icon('plus-circle'), icon('database'), "Download raw data from WQP"), 
+				fluidRow(
+					column(2, h4('Start date'), dateInput('StartDate', '', format='mm/dd/yyyy')),
+					column(2, h4('End date'), dateInput('EndDate', '', format='mm/dd/yyyy'))
+				),
+				actionButton('dwnld_wqp', 'Download WQP data', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('download'))
 			)
 		)
 	)
@@ -71,6 +78,8 @@ ui <-fluidPage(
 server <- function(input, output, session){
 
 options(warn=0)
+
+
 
 # Empty reactive objects
 reactive_objects=reactiveValues()
@@ -121,6 +130,7 @@ observeEvent(input$clear_au, {
 # Generate data and criteria subsets (based on selected AUs) for analysis tools on button press 
 observeEvent(input$build_tools,{
 	sel_sites=reactive_objects$site_asmnt$IR_MLID[reactive_objects$site_asmnt$ASSESS_ID %in% reactive_objects$selected_aus]
+	reactive_objects$sel_sites=sel_sites
 	reactive_objects$sel_data=subset(merged_data, IR_MLID %in% sel_sites)
 	reactive_objects$sel_crit=subset(criteria, IR_MLID %in% sel_sites)
 	showModal(modalDialog(title="Analysis tools ready.",size="l",easyClose=T,
@@ -145,11 +155,23 @@ output$exp_dt <- downloadHandler(
 		path = file, format_headers=F, col_names=T)}
 )
 
-
-
+# Example input file (can be fixed & removed for public versions)
 observeEvent(input$example_input, {
 	showModal(urlModal('https://github.com/utah-dwq/asmntDashboard/blob/version2/data/site-use-param-asmnt.csv', title = "Example data", subtitle = "An example data input for this application can be downloaded at this link."))
 })
+
+# Download WQP data for sites (not yet working)
+observeEvent(input$dwnld_wqp, ignoreInit=T, {
+	req(reactive_objects$sel_sites)
+	data=wqTools::readWQP(start_date=input$StartDate, end_date=input$EndDate, type='result', siteid=reactive_objects$sel_sites)
+	#output$dwnld_wqp <- downloadHandler(
+	#	filename=paste0('wqp-result-', Sys.Date(),'.xlsx'),
+	#	content = function(file) {writexl::write_xlsx(
+	#		list(data=data),
+	#		path = file, format_headers=F, col_names=T)}
+	#)
+})
+
 
 
 
