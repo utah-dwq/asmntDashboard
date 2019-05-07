@@ -52,6 +52,10 @@ ui <-fluidPage(
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('chart-bar'), "Figures"),
 							fluidRow(column(12))
+				# Figure inputs:
+				#reactive_objects$sel_data
+				#reactive_objects$sel_crit
+
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('table'), "Data table"),
 				fluidRow(downloadButton('exp_dt', label = "Export data table", icon='download', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%')),
@@ -114,7 +118,7 @@ observeEvent(input$clear_au, {
 	reactive_objects$selected_aus=NULL
 })
 
-# Generate data and criteria subsets (based on selected AUs) for analysis tools on button press
+# Generate data and criteria subsets (based on selected AUs) for analysis tools on button press 
 observeEvent(input$build_tools,{
 	sel_sites=reactive_objects$site_asmnt$IR_MLID[reactive_objects$site_asmnt$ASSESS_ID %in% reactive_objects$selected_aus]
 	reactive_objects$sel_data=subset(merged_data, IR_MLID %in% sel_sites)
