@@ -32,7 +32,7 @@ ui <-fluidPage(
 			bsCollapsePanel(list(icon('plus-circle'), icon('file-import'),"Import assessments file"), 
 				fluidRow(
 					column(2, fileInput("import_assessments", "Import assessment file", accept=".csv")),
-					column(2, actionButton('example_input', icon=icon('question'), label='', style = "margin-top: 25px;"))
+					column(2, actionButton('example_input', icon=icon('question'), label='', style = "margin-top: 25px; color: #fff; background-color: #337ab7; border-color: #2e6da4%"))
 				)
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('map-marked-alt'),"Review map"),
@@ -45,7 +45,8 @@ ui <-fluidPage(
 					#column(3, uiOutput('ml_types')),
 					#column(2, shinyWidgets::materialSwitch(inputId = "auto_zoom", label="Auto-zoom on", value = TRUE, right=T, status='primary'))
 				),
-		
+				br(),
+				
 				# Map
 				fluidRow(shinycssloaders::withSpinner(leaflet::leafletOutput("assessment_map", height="600px"),size=2, color="#0080b7"))
 			),
@@ -53,7 +54,7 @@ ui <-fluidPage(
 							fluidRow(column(12))
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('table'), "Data table"),
-				fluidRow(downloadButton('exp_dt', label = "Export data table", icon='download')),
+				fluidRow(downloadButton('exp_dt', label = "Export data table", icon='download', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%')),
 				br(),
 				fluidRow(div(DT::DTOutput("dt"), style = list("font-size:65%")))
 			)
@@ -113,11 +114,13 @@ observeEvent(input$clear_au, {
 	reactive_objects$selected_aus=NULL
 })
 
-# Generate data and criteria subsets (based on selected AUs) for analysis tools
+# Generate data and criteria subsets (based on selected AUs) for analysis tools on button press
 observeEvent(input$build_tools,{
 	sel_sites=reactive_objects$site_asmnt$IR_MLID[reactive_objects$site_asmnt$ASSESS_ID %in% reactive_objects$selected_aus]
 	reactive_objects$sel_data=subset(merged_data, IR_MLID %in% sel_sites)
 	reactive_objects$sel_crit=subset(criteria, IR_MLID %in% sel_sites)
+	showModal(modalDialog(title="Analysis tools ready.",size="l",easyClose=T,
+		"Data and analysis tools ready. Scroll to 'Figures' and 'Data table' panels to review and plot data."))
 })
 
 
@@ -137,6 +140,12 @@ output$exp_dt <- downloadHandler(
 		list(data=reactive_objects$sel_data),
 		path = file, format_headers=F, col_names=T)}
 )
+
+
+
+observeEvent(input$example_input, {
+	showModal(urlModal('https://github.com/utah-dwq/asmntDashboard/blob/version2/data/site-use-param-asmnt.csv', title = "Example data", subtitle = "An example data input for this application can be downloaded at this link."))
+})
 
 
 
