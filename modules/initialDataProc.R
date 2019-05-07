@@ -1,5 +1,8 @@
 initialDataProc=function(site_use_param_asmnt){
 
+# Load data & criteria
+load('data/prepped_merged_data.Rdata')
+
 # Initial data processing
 ## Site level rollups
 site_param_asmnt=irTools::rollUp(list(site_use_param_asmnt), group_vars=c('IR_MLID','IR_MLNAME','IR_Lat','IR_Long','ASSESS_ID','AU_NAME','R3172ParameterName'), cat_var="AssessCat", print=F, expand_uses=F)

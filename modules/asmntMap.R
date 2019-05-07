@@ -1,8 +1,21 @@
 asmntMap=function(au_asmnt_poly, site_asmnt){
 	ss_poly=wqTools::ss_poly
 	bu_poly=wqTools::bu_poly
+	au_asmnt_poly=within(au_asmnt_poly, {
+		lab=paste0(
+					'<p>', 
+					"AU name: ", AU_NAME,
+					'<br />', "AU ID: ", ASSESS_ID,
+					'<br />', "Assessment: ", AssessCat,
+					'<br />', "Impaired params: ", Impaired_params,
+					'<br />', "ID w/ exceedance params: ", idE_params)
+	
+	})
+	
 	assessment_map <- 
 		buildMap(plot_polys = F) %>%
+			addMapPane("permits", zIndex = 413) %>%
+			addMapPane("highlight", zIndex = 414) %>%
 			leaflet::addCircleMarkers(data=site_asmnt, lat=~IR_Lat, lng=~IR_Long, group="Sites",
 				color = ~col, opacity=0.8, layerId=~IR_MLID, options = pathOptions(pane = "markers"),
 				popup = paste0(
@@ -18,12 +31,7 @@ asmntMap=function(au_asmnt_poly, site_asmnt){
 					"<br> Uses: ", bu_poly$bu_class)
 			) %>%
 			addPolygons(data=au_asmnt_poly,group="Assessment units",smoothFactor=4,fillOpacity = 0.1, layerId=~ASSESS_ID, weight=3,color=~col, options = pathOptions(pane = "au_poly"),
-				popup=paste0(
-					"AU name: ", au_asmnt_poly$AU_NAME,
-					"<br> AU ID: ", au_asmnt_poly$ASSESS_ID,
-					"<br> Assessment: ", au_asmnt_poly$AssessCat,
-					"<br> Impaired params: ", au_asmnt_poly$Impaired_params,
-					"<br> ID w/ exceedance params: ", au_asmnt_poly$idE_params)
+				label=lapply(au_asmnt_poly$lab, HTML)
 			) %>%
 			addPolygons(data=ss_poly,group="Site-specific standards",smoothFactor=4,fillOpacity = 0.1,weight=3,color="blue", options = pathOptions(pane = "underlay_polygons"),
 				popup=paste0("SS std: ", ss_poly$SiteSpecif)
