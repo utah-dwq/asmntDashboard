@@ -32,7 +32,8 @@ ui <-fluidPage(
 			bsCollapsePanel(list(icon('plus-circle'), icon('file-import'),"Import assessments file"), 
 				fluidRow(
 					column(2, fileInput("import_assessments", "Import assessment file", accept=".csv")),
-					column(2, actionButton('example_input', icon=icon('question'), label='', style = "margin-top: 25px; color: #fff; background-color: #337ab7; border-color: #2e6da4%"))
+					uiOutput('ex_url')
+					#column(2, actionButton('example_input', icon=icon('question'), label='', style = "margin-top: 25px; color: #fff; background-color: #337ab7; border-color: #2e6da4%"))
 				)
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('map-marked-alt'),"Review map"),
@@ -80,7 +81,8 @@ server <- function(input, output, session){
 
 options(warn=0)
 
-
+# Example input url
+output$ex_url <-renderUI(a(href='https://github.com/utah-dwq/asmntDashboard/blob/version2/data/site-use-param-asmnt.csv',list(icon('question'),"Example input data"),target="_blank"))
 
 # Empty reactive objects
 reactive_objects=reactiveValues()
@@ -155,11 +157,6 @@ output$exp_dt <- downloadHandler(
 		list(data=reactive_objects$sel_data),
 		path = file, format_headers=F, col_names=T)}
 )
-
-# Example input file (can be fixed & removed for public versions)
-observeEvent(input$example_input, {
-	showModal(urlModal('https://github.com/utah-dwq/asmntDashboard/blob/version2/data/site-use-param-asmnt.csv', title = "Example data", subtitle = "An example data input for this application can be downloaded at this link."))
-})
 
 # Download WQP data for sites
 observe({
