@@ -55,13 +55,12 @@ ui <-fluidPage(
 			bsCollapsePanel(list(icon('plus-circle'), icon('chart-bar'), "Figures"),
 			                     tabsetPanel(
 			                       tabPanel("Multi-Site Time Series",
-			                                fluidRow(column(3,uiOutput("sel_comparameter",style = "margin-top: 25px"))),
+			                                fluidRow(column(3,uiOutput("sel_comparameter",style = "margin-top: 25px")),
+			                                         column(3,uiOutput("sel_compunit",style = "margin-top: 25px"))),
 			                                fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplots"), selected = "Time Series", inline = TRUE))),
 			                                fluidRow(plotlyOutput("compare_sites"))),
 			                       tabPanel("Single Site Time Series",
 			                                fluidRow(column(3,uiOutput("sel_param_site",style = "margin-top: 25px"))),
-			                                fluidRow(column(3,uiOutput("sel_use1")),
-			                                         column(3,uiOutput("sel_use2"))),
 			                                fluidRow(column(3,uiOutput("sel_param1")),
 			                                         column(3,uiOutput("sel_param2"))),
 			                                fluidRow(plotlyOutput("compare_params"))),
@@ -165,6 +164,11 @@ observeEvent(input$build_tools,{
 #Create parameter selection drop down (from non duplicated dataset)
 output$sel_comparameter <- renderUI({
     selectInput("sel_comparameter","Select Parameter", choices = c("",unique(reactive_objects$sel_data$R3172ParameterName)), selected = "")
+})
+
+output$sel_compunit <- renderUI({
+  
+  selectInput("sel_compunit","Select Unit", choices = c("",unique(reactive_objects$sel_data$R3172ParameterName)), selected = "")
 })
 
 output$compare_sites <- renderPlotly({
