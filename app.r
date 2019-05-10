@@ -166,8 +166,6 @@ observeEvent(input$build_tools,{
 	reactive_objects$sel_sites=sel_sites
 	reactive_objects$sel_data=subset(merged_data, IR_MLID %in% sel_sites)
 	reactive_objects$sel_crit=subset(criteria, IR_MLID %in% sel_sites)
-	sel_data<<-reactive_objects$sel_data
-	sel_crit<<-reactive_objects$sel_crit
 	showModal(modalDialog(title="Analysis tools ready.",size="l",easyClose=T,
 		"Data and analysis tools ready. Scroll to 'Figures' and 'Data table' panels to review and plot data."))
 })

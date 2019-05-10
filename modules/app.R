@@ -1,44 +1,42 @@
+# Figures module
 
-# Figure inputs:
-#reactive_objects$sel_data
-#reactive_objects$sel_crit
-
-setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard\\data')
+#setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard\\data')
 load('figures-test-data.Rdata')
-
 
 ui <-fluidPage(
 #figuresUI <- function(id){
-	fluidRow(uiOutput('sel_param1'), uiOutput('sel_units1')),
-	fluidRow(uiOutput('sel_param2'), uiOutput('sel_units2')),
-	tabsetPanel(
-		tabPanel('Multiple sites'
-				##fluidRow(column(3,uiOutput("sel_comparameter",style = "margin-top: 25px")),
-				#			column(3,uiOutput("sel_compunit",style = "margin-top: 25px"))),
-				#fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplots"), selected = "Time Series", inline = TRUE))),
-				#fluidRow(plotlyOutput("compare_sites"))
+	#ns <- NS(id)
+	
+	fluidRow(
+		column(2,fluidRow(uiOutput('sel_param1'), uiOutput('sel_units1'))),
+		column(2,
+			conditionalPanel("input.tabs=='Multiple parameters'",
+				fluidRow(uiOutput('sel_param2'), uiOutput('sel_units2'))
+			)
+		)
+	),
+	tabsetPanel(id='tabs',
+		tabPanel('Multiple sites',
+			fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplots", "Concentration Map"), selected = "Time Series", inline = TRUE)))
+			#fluidRow(plotlyOutput("compare_sites"))
 		),
-		tabPanel("Single Site Time Series"
-				#,
-				#fluidRow(column(3,uiOutput("sel_param_site",style = "margin-top: 25px"))),
-				#fluidRow(column(3,uiOutput("sel_param1")),
-				#			column(3,uiOutput("sel_param2"))),
-				#fluidRow(plotlyOutput("compare_params"))
+		tabPanel("Multiple parameters"
+			#fluidRow(plotlyOutput("compare_params"))
 		),
-		tabPanel("Concentration Map",
-				br(),
-				fluidRow(br(),column(3,fluidRow(uiOutput("sel_maparameter", style = "margin-left: 25px")),
-								fluidRow(uiOutput("sel_paramdate", style = "margin-left: 25px"))),
-							column(9, shinycssloaders::withSpinner(leaflet::leafletOutput("conc_map", height="500px"),size=2, color="#0080b7")))
+		tabPanel("Concentration Map"
+			#br(),
+			#fluidRow(br(),column(3,fluidRow(uiOutput("sel_maparameter", style = "margin-left: 25px")),
+			#				fluidRow(uiOutput("sel_paramdate", style = "margin-left: 25px"))),
+			#			column(9, shinycssloaders::withSpinner(leaflet::leafletOutput("conc_map", height="500px"),size=2, color="#0080b7")))
 		)
 	)
 #}
 )
 
-
 server <- function(input, output, session){
 	
-	## Mult sites one param
+	# Make sure numeric criterion is numeric
+	sel_crit$NumericCriterion=as.numeric(sel_crit$NumericCriterion)
 	
 	# Select param 1
 	output$sel_param1 <- renderUI({
@@ -48,7 +46,7 @@ server <- function(input, output, session){
 	# Select units 1
 	output$sel_units1 <- renderUI({
 		units=unique(sel_data[sel_data$R3172ParameterName == input$sel_param1, 'IR_Unit'])
-		selectInput("sel_units1","Select Units", choices = units)
+		selectInput("sel_units1","Select Units 1", choices = units)
 	})
 
 	# Select param 2
@@ -60,9 +58,57 @@ server <- function(input, output, session){
 	# Select units 2
 	output$sel_units2 <- renderUI({
 		units=unique(sel_data[sel_data$R3172ParameterName == input$sel_param2, 'IR_Unit'])
-		selectInput("sel_units2","Select Units", choices = units)
+		selectInput("sel_units2","Select Units 2", choices = units)
 	})
 
+	# Generate parameter 1 data & criteria (need to do criteria still)
+	observe({
+		req(input$sel_param1, input$sel_units1)
+		
+		## Data
+		param1=subset(sel_data, R3172ParameterName == input$sel_param1)
+		### Convert units if multiple available
+		if(length(unique(param1$IR_Unit)>1)){
+			param1$target_unit=input$sel_units1
+			param1=wqTools::convertUnits(param1, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
+		}else{param1$plot_value=param1$IR_Value}
+		param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
+		param1<<-param1
+		
+		## Criteria
+		crit1=subset(sel_crit, R3172ParameterName == input$sel_param1)
+		### Convert units if multiple available
+		if(length(unique(crit1$CriterionUnits)>1)){
+			crit1$target_unit=input$sel_units1
+			crit1=wqTools::convertUnits(crit1, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
+		}else{crit1$plot_value=crit1$NumericCriterion}
+		crit1<<-crit1
+		
+	})
+
+	# Generate parameter 2 data & criteria (need to do criteria still)
+	observe({if(input$tabs=='Multiple parameters'){
+		req(input$sel_param2, input$sel_units2)
+		param2=subset(sel_data, R3172ParameterName == input$sel_param2)
+		## Convert units if multiple available
+		if(length(unique(param2$IR_Unit)>1)){
+			param2$target_unit=input$sel_units2
+			param2=wqTools::convertUnits(param2, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
+		}else{param2$plot_value=param2$IR_Value}
+		param2=unique(param2[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
+		#param2<<-param2
+		
+		## Criteria
+		crit2=subset(sel_crit, R3172ParameterName == input$sel_param2)
+		### Convert units if multiple available
+		if(length(unique(crit2$CriterionUnits)>1)){
+			crit2$target_unit=input$sel_units2
+			crit2=wqTools::convertUnits(crit2, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
+		}else{crit2$plot_value=crit2$NumericCriterion}
+		crit2<<-crit2
+	}})	
+	
+	
 	
 #	output$compare_sites <- renderPlotly({
 #	req(input$sel_comparameter)
