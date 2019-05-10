@@ -1,408 +1,387 @@
 ### Assessment Dashboard
-### Version 1
+### Version 2
 
+# Packages
 library(wqTools)
-library(magrittr)
-require(leaflet)
-require(leaflet.extras)
-require(RColorBrewer)
-require(sf)
-require(plyr)
-require(DT)
+library(leaflet)
+library(shinyBS)
+library(irTools)
+library(plotly)
 
+#setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard')
+#site_use_param_asmnt=read.csv('data/site-use-param-asmnt.csv')
 
-# Testing/toy data
-compiled.dat <- read.csv("compiled_assessment_file_final2016ir.csv")
-compiled.dat <- compiled.dat[!compiled.dat$MLID_DWQCat=="do not report",]
-master.site.file <- read.csv("wqp_master_site_file.csv")
+# Modules/functions
+source('modules/initialDataProc.R')
+source('modules/asmntMap.R')
 
-# Make names same as master site file so can be merged.
-names(compiled.dat)[names(compiled.dat)=="MLID_NAME"] <- "MonitoringLocationName"
-names(compiled.dat)[names(compiled.dat)=="AUID"] <- "ASSESS_ID"
-compiled.dat$ASSESS_ID = as.factor(paste(compiled.dat$ASSESS_ID, "00", sep="_"))
+# Load data & criteria
+load('data/prepped_merged_data.Rdata')
 
-# Isolate accepted sites from master site file for example
-compiled.dat <- merge(compiled.dat,unique(master.site.file[,c("IR_FLAG","MonitoringLocationName")]), all.x = TRUE)
-compiled.dat <- compiled.dat[!is.na(compiled.dat$IR_FLAG)&compiled.dat$IR_FLAG=="ACCEPT",]
+options(warn = -1)
 
-# Keep only sites that have a match within the master site file (MLID conventions totally different, so went with Monitoring Location Name)
-# EH note: I think there are some mis-matched AU/site combos between the master site file and the compiled file. I got rid of those for now (you'll see the number of rows decrease after this next line). Merging on all leads to odd NA lat/long for sites (combos that don't exist in master site file).
-compiled.sites <- merge(compiled.dat,master.site.file, by=c("ASSESS_ID","MonitoringLocationName"))
-
-# Sample Not Supporting AUs for "New Impairment" demo
-ns_aus <- compiled.sites[compiled.sites$AU_DWQCat=="Not Supporting"&compiled.sites$MLID_DWQCat=="Not Supporting",] # Need to also have a not supporting site to be deemed a "new" impairment
-uniq_ns_aus <- unique(ns_aus$ASSESS_ID)
-new_au_imp = sample(uniq_ns_aus, 10) # randomly pick 10 AU's to be "newly impaired" for demo
-compiled.sites$new_au_imp = ifelse(compiled.sites$ASSESS_ID%in%new_au_imp,"YES","NO")
-levels(compiled.sites$AU_DWQCat)=append(levels(compiled.sites$AU_DWQCat),"New Impairment")
-compiled.sites$AU_DWQCat[compiled.sites$new_au_imp=="YES"]="New Impairment"
-
-# Sample Not Supporting sites within "newly impaired" AU's to be "newly impaired" sites.
-compiled_newimp = compiled.sites[compiled.sites$new_au_imp=="YES"&compiled.sites$MLID_DWQCat=="Not Supporting",]
-samplesite <- function(x){as.character(sample(x$MonitoringLocationIdentifier,1))}
-new_site_imp = ddply(compiled_newimp,c("ASSESS_ID"),.fun=samplesite)
-compiled.sites$new_site_imp = ifelse(compiled.sites$MonitoringLocationIdentifier%in%new_site_imp$V1, "YES","NO")
-
-# Change identifying info for site map labels/colors 
-compiled.sites$site_colors = ifelse(compiled.sites$new_site_imp=="YES", "New Impairment", as.character(compiled.sites$MLID_DWQCat))
-compiled.sites$site_colors[compiled.sites$site_colors=="Further Investigations Needed: Further Investigations Needed"] = "More Investigation Needed"
-compiled.sites$site_colors[compiled.sites$site_colors=="Insufficient Data, No Exceedances: Not Assessed"] = "Insufficient Data, No Exceedances"
-compiled.sites$site_colors <- factor(compiled.sites$site_colors, levels=c(
-  "New Impairment",
-  "Not Supporting",
-  "Insufficient Data, Exceedances",
-  "More Investigation Needed",
-  "Insufficient Data, No Exceedances",
-  "No Evidence of Impairment",
-  "Supporting"))
-
-# Get AU data for polygon drawing
-narrow.au = unique(compiled.sites[,c("ASSESS_ID","AU_DWQCat","new_au_imp","Reviewer")])
-au_poly <- merge(wqTools::au_poly, narrow.au, by="ASSESS_ID")
-au_poly$au_colors = ifelse(au_poly$new_au_imp=="YES", "New Impairment", as.character(au_poly$AU_DWQCat))
-au_poly$au_colors[au_poly$au_colors=="Further Investigations Needed: Further Investigations Needed"] = "More Investigation Needed"
-au_poly$au_colors[au_poly$au_colors=="Insufficient Data, No Exceedances: Not Assessed"] = "Insufficient Data, No Exceedances"
-au_poly$au_colors <- factor(au_poly$au_colors, levels=c(
-    "New Impairment",
-    "Not Supporting",
-    "Insufficient Data, Exceedances",
-    "More Investigation Needed",
-    "Insufficient Data, No Exceedances",
-    "No Evidence of Impairment",
-    "Supporting"))
-
-# Prep site data for plotting
-site_coords=unique(compiled.sites[,c("ASSESS_ID","MonitoringLocationIdentifier","MonitoringLocationName","MonitoringLocationTypeName","LatitudeMeasure","LongitudeMeasure","site_colors","MLID_DWQCat","IR_MLID")])
-# Renaming not necessary because you're adding your own sites manually later - we can give the popups whatever names we want.
-#names(site_coords)[names(site_coords)=="MonitoringLocationIdentifier"]="locationID"
-#names(site_coords)[names(site_coords)=="MonitoringLocationName"]="locationName"
-#names(site_coords)[names(site_coords)=="MonitoringLocationTypeName"]="locationType"
-site_coords=sf::st_as_sf(site_coords, coords=c("LongitudeMeasure","LatitudeMeasure"), crs=4326, remove=F)
-
-# Create reviewer list (JV Note - I assigned these in the .csv which I think is how this will play out in the future.)
-reviewer_list=append(as.character(unique(au_poly$Reviewer)),c("All",""))
-
-# Original data to be in data tables
-au_data_table <- unique(compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,c("IR_Year","WMU","ASSESS_ID","AUID_Descr","AUID_Loc","AU_USES",
-                                                                                                                  "AU_EPACat","AU_DWQCat","Reviewer")])
-au_data_table$ASSESS_ID=as.character(au_data_table$ASSESS_ID)
-au_data_table$ReviewerFlag=as.factor("Review needed")
-levels(au_data_table$ReviewerFlag)=c("Review needed", "ACCEPT", "EDIT", "RESEGMENT", "REJECT")
-au_data_table$ReviewerComment=""
-
-
-rem_cols <- names(au_data_table)[!names(au_data_table)%in%"ASSESS_ID"]  
-site_data_table <- compiled.dat[compiled.dat$MonitoringLocationName%in%compiled.sites$MonitoringLocationName,!names(compiled.dat)%in%rem_cols]
-site_data_table$ASSESS_ID=as.character(site_data_table$ASSESS_ID)
-
-##### Need to cast parameter names & uses - these have been removed for now (I think this was killing app table speed).
-site_data_table=unique(site_data_table[,c("MLID","MonitoringLocationName","ASSESS_ID","MLID_DWQCat")])
-
-
-##################### UI ######################
+# User interface
 ui <-fluidPage(
-
-
-
-	# Header
-	headerPanel(title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85)),
-		windowTitle="Assessment Dashboard"
-	),
-
-	# Title
-	titlePanel("", 
-		tags$head(
-			tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"),
-			tags$style(".modal-dialog{ width:auto}"),
-			tags$style(".modal-body{ min-height:auto}")
-		)
-	),
-
-	#,
-
-	# Input widgets
-	fluidRow(
-		column(2, selectInput("whodunit", "Select reviewer", choices = reviewer_list, selected = "")),
-		column(2, fileInput("import_save", "Import saved reviews", accept=".csv")),
-		column(2, style = "margin-top: 25px;", downloadButton('exp_rev', "Export reviews", tags$style(type='text/css', "button#export_reviews { margin-bottom: 9px; }")))
-		#downloadButton('downloadData', "Export reviews")
-	),
-	fluidRow(
-		column(6,
-			tabsetPanel(id="ui_tab",
-				tabPanel("Assessment Units",
-					tags$br(),
-					actionButton("au_comment","Make AU Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					actionButton("au_table_filter_clear","Clear table filters",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					div(DT::DTOutput("AU_data"), style = "font-size:70%")
-				),
-				tabPanel("Sites",
-					tags$br(),
-					actionButton("site_comment","Make Site Comment",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					actionButton("site_table_filter_clear","Clear table filters",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					div(DT::DTOutput("Site_data"), style = "font-size:70%")
-				)
-			)
-		),
-		column(6,
-				fluidRow(h4("Individual sites will appear after zooming in to an AU. Click on AU's or sites to populate the AU and site datatable tabs to the left."),
-				          #fluidRow(column(6,checkboxInput("zoom_au", label = "Enable data table zoom control"))
-				          fluidRow(column(6,actionButton("reset_zoom", label = "Reset map zoom",style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'))
-				                   ),      
-				          fluidRow(shinycssloaders::withSpinner(leaflet::leafletOutput("aumap", height="600px"),size=2, color="#0080b7")))
-		)
-	)
+  # Header
+  headerPanel(
+    title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85), target="_blank"),
+    tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="WQ Assessment Dashboard")
+  ),
+  
+  mainPanel(width=12,
+            bsCollapse(multiple=T,
+                       bsCollapsePanel(list(icon('plus-circle'), icon('file-import'),"Import assessments file"), 
+                                       fluidRow(
+                                         column(2, fileInput("import_assessments", "Import assessment file", accept=".csv")),
+                                         uiOutput('ex_url')
+                                         #column(2, actionButton('example_input', icon=icon('question'), label='', style = "margin-top: 25px; color: #fff; background-color: #337ab7; border-color: #2e6da4%"))
+                                       )
+                       ),
+                       bsCollapsePanel(list(icon('plus-circle'), icon('map-marked-alt'),"Review map"),
+                                       fluidRow(
+                                         actionButton('clear_au', 'Clear selected AU(s)', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('trash-alt')),
+                                         actionButton('build_tools', 'Build analysis tools', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('toolbox'))
+                                         #column(1),
+                                         #column(3, shinyWidgets::pickerInput("site_types","Site types to map:", choices=site_type_choices, multiple=T, options = list(`actions-box` = TRUE, size = 10, `selected-text-format` = "count > 3"))),
+                                         #column(3, uiOutput("review_reasons")),
+                                         #column(3, uiOutput('ml_types')),
+                                         #column(2, shinyWidgets::materialSwitch(inputId = "auto_zoom", label="Auto-zoom on", value = TRUE, right=T, status='primary'))
+                                       ),
+                                       br(),
+                                       
+                                       # Map
+                                       fluidRow(shinycssloaders::withSpinner(leaflet::leafletOutput("assessment_map", height="600px"),size=2, color="#0080b7"))
+                       ),
+                       bsCollapsePanel(list(icon('plus-circle'), icon('chart-bar'), "Figures"),
+                                       tabsetPanel(
+                                         tabPanel("Multi-Site Time Series",
+                                                  fluidRow(column(3,uiOutput("sel_comparameter",style = "margin-top: 25px")),
+                                                           column(3,uiOutput("sel_compunit",style = "margin-top: 25px")),
+                                                           column(3,uiOutput("sel_paramdate",style = "margin-top: 25px"))),
+                                                  fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplots", "Concentration Map"), selected = "Time Series", inline = TRUE))),
+                                                  fluidRow(uiOutput("compare_sites"))),
+                                         tabPanel("Single Site Time Series",
+                                                  fluidRow(column(3,uiOutput("sel_param_site",style = "margin-top: 25px"))),
+                                                  fluidRow(column(3,uiOutput("sel_param1")),
+                                                           column(3,uiOutput("sel_param2"))),
+                                                  fluidRow(plotlyOutput("compare_params")))#,
+                                         # tabPanel("Concentration Map",
+                                         #          br(),
+                                         #          fluidRow(br(),column(3,fluidRow(uiOutput("sel_maparameter", style = "margin-left: 25px")),
+                                         #                          fluidRow(uiOutput("sel_paramdate", style = "margin-left: 25px"))),
+                                         #                   column(9, shinycssloaders::withSpinner(leaflet::leafletOutput("conc_map", height="500px"),size=2, color="#0080b7")))
+                                         # )
+                                       )
+                                       # Figure inputs:
+                                       #reactive_objects$sel_data
+                                       #reactive_objects$sel_crit
+                                       
+                       ),
+                       bsCollapsePanel(list(icon('plus-circle'), icon('table'), "Data table"),
+                                       fluidRow(downloadButton('exp_dt', label = "Export data table", icon='download', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%')),
+                                       br(),
+                                       fluidRow(div(DT::DTOutput("dt"), style = list("font-size:65%")))
+                       ),
+                       bsCollapsePanel(list(icon('plus-circle'), icon('database'), "Download raw data from WQP"), 
+                                       fluidRow(
+                                         column(2, h4('Start date'), dateInput('StartDate', '', format='mm/dd/yyyy')),
+                                         column(2, h4('End date'), dateInput('EndDate', '', format='mm/dd/yyyy'))
+                                       ),
+                                       uiOutput('wqp_url')
+                                       #actionButton('dwnld_wqp', 'Download WQP data', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('download'))
+                       )
+            )
+  )
 )
 
-##################### SERVER ######################
 
+# Server
 server <- function(input, output, session){
-
-#  # Loading modal to keep user out of trouble while app loads & draws...
-#  showModal(modalDialog(title="LOADING - PLEASE WAIT...",size="l",footer=NULL))
-#  
-#	# Remove modal when app is ready
-#	observe({
-#		req(reactive_objects$map_done, reactive_objects$site_data_table,reactive_objects$au_data_table)
-#		removeModal()
-#	})
-
-  # Empty reactive values object
-  reactive_objects=reactiveValues()
- 
-  # Select sites and polygons based on reviewer selected to populate tables & map
-    observe({
-      req(input$whodunit)
-	  reviewer <- input$whodunit
-      if(reviewer=="All"){
-        reactive_objects$au_poly = au_poly
-		reactive_objects$au_data_table=au_data_table
-        reactive_objects$site_coords = site_coords
-		reactive_objects$site_data_table=site_data_table
-      }else{
-		if(reviewer!=""){
-          reactive_objects$au_poly = au_poly[au_poly$Reviewer==reviewer,]
-		  reactive_objects$au_data_table=au_data_table[au_data_table$Reviewer==reviewer,]
-          reactive_objects$site_coords = site_coords[site_coords$ASSESS_ID %in% reactive_objects$au_poly$ASSESS_ID,]
-		  reactive_objects$site_data_table=site_data_table[site_data_table$ASSESS_ID %in% reactive_objects$au_poly$ASSESS_ID,]
-		}
-	  }
-	 })
-	 
   
-  # Select map colors
-  pal <- RColorBrewer::brewer.pal(length(unique(au_poly$au_colors)),"Spectral")
-  pal1 = leaflet::colorFactor(pal, domain=au_poly$au_colors)
-  	
-	# AU data table output
-	output$AU_data <- DT::renderDT({
-		req(reactive_objects$au_data_table)
-			DT::datatable(
-				reactive_objects$au_data_table, selection='single', rownames=FALSE, filter="top",
-					options = list(scrollY = '600px', paging = FALSE, scrollX=TRUE, dom="ltipr")
-			)
-		})
-	outputOptions(output, "AU_data", suspendWhenHidden = FALSE)
-	
-	# Site data table output
-	output$Site_data <- DT::renderDT({
-		req(reactive_objects$site_data_table)
-			DT::datatable(
-				reactive_objects$site_data_table, selection='single', rownames=FALSE, filter="top",
-					options = list(scrollY = '600px', paging = FALSE, scrollX=TRUE, dom="ltipr")
-			)
-	})
-	outputOptions(output, "Site_data", suspendWhenHidden = FALSE)
-
-  # Select au map set up
-  aumap = leaflet::createLeafletMap(session, 'aumap')
-  # map
-    session$onFlushed(once = T, function() {
-		output$aumap <- leaflet::renderLeaflet({
-			req(reactive_objects$site_coords)
-			map = wqTools::buildMap(plot_polys=FALSE, search="")
-			map=addMapPane(map,"au_poly", zIndex = 425)
-			map = addPolygons(map, data=reactive_objects$au_poly,group="Assessment units",smoothFactor=2,opacity=0.9, fillOpacity = 0.1, layerId=reactive_objects$au_poly$ASSESS_ID,weight=3,color=~pal1(reactive_objects$au_poly$au_colors), options = pathOptions(pane = "au_poly"),
-			                popup=paste0(
-			                  "AU name: ", reactive_objects$au_poly$AU_NAME,
-			                  "<br> AU ID: ", reactive_objects$au_poly$ASSESS_ID,
-			                  "<br> AU type: ", reactive_objects$au_poly$AU_Type,
-			                  "<br> Category: ", reactive_objects$au_poly$au_colors)
-			)
-			map = addPolygons(map, data=bu_poly,group="Beneficial uses",smoothFactor=4,opacity=0.9, ,fillOpacity = 0.1,weight=3,color="green", options = pathOptions(pane = "underlay_polygons"),
-			                popup=paste0(
-			                  "Description: ", bu_poly$R317Descrp,
-			                  "<br> Uses: ", bu_poly$bu_class)
-			)
-			map = addPolygons(map, data=ss_poly,group="Site-specific standards",smoothFactor=2,opacity=0.9, ,fillOpacity = 0.1,weight=3,color="blue", options = pathOptions(pane = "underlay_polygons"),
-			                popup=paste0("SS std: ", ss_poly$SiteSpecif)
-			)
-			map=addMapPane(map,"site_markers", zIndex = 450)
-			map = addCircleMarkers(map, data = reactive_objects$site_coords, lat=reactive_objects$site_coords$LatitudeMeasure, lng=reactive_objects$site_coords$LongitudeMeasure, layerId = reactive_objects$site_coords$IR_MLID,group="Sites",
-				weight = 5, fill = TRUE, opacity=0.95, fillOpacity = 0.5, fillColor =~pal1(reactive_objects$site_coords$site_colors),radius = 12, color =~pal1(reactive_objects$site_coords$site_colors), options = pathOptions(pane = "site_markers"),
-			                           popup = paste0(
-			                             "MLID: ", reactive_objects$site_coords$MonitoringLocationIdentifier,
-			                             "<br> ML Name: ", reactive_objects$site_coords$MonitoringLocationName,
-			                             "<br> Type: ", reactive_objects$site_coords$locationType,
-			                             "<br> Category: ", reactive_objects$site_coords$MLID_DWQCat))
-			map = leaflet::addLayersControl(map,
-			                              position ="topleft",
-			                              baseGroups = c("Topo","Satellite"),overlayGroups = c("Sites","Assessment units","Beneficial uses", "Site-specific standards"),
-			                              options = leaflet::layersControlOptions(collapsed = TRUE, autoZIndex=TRUE))
-			map=showGroup(map, "Assessment units")
-			#map=hideGroup(map, "Sites")
-			map=hideGroup(map, "Site-specific standards")
-			map=hideGroup(map, "Beneficial uses") 
-			map=removeMeasure(map)
-			map=leaflet::addLegend(map, position = 'topright',
-			                       colors = unique(pal1(au_poly$au_colors)), 
-			                       labels = unique(au_poly$au_colors))
-		})
-		reactive_objects$map_done=1
-    })
-
+  options(warn=0)
+  
+  # Example input url
+  output$ex_url <-renderUI(a(href='https://github.com/utah-dwq/asmntDashboard/blob/version2/data/site-use-param-asmnt.csv',list(icon('question'),"Example input data"),target="_blank"))
+  
+  # Empty reactive objects
+  reactive_objects=reactiveValues()
+  
+  # Import site-use-param-assessments file
+  observeEvent(input$import_assessments,{
+    file=input$import_assessments$datapath
+    site_use_param_asmnt=read.csv(file)
+    inputs=initialDataProc(site_use_param_asmnt)
+    reactive_objects$au_asmnt_poly=inputs$au_asmnt_poly
+    reactive_objects$site_asmnt=inputs$site_asmnt
+    reactive_objects$selected_aus=vector()
+  })
+  
+  # Map output
+  output$assessment_map=leaflet::renderLeaflet({
+    req(reactive_objects$au_asmnt_poly, reactive_objects$site_asmnt)
+    asmntMap(reactive_objects$au_asmnt_poly, reactive_objects$site_asmnt)
+  })
+  asmnt_map_proxy=leafletProxy('assessment_map')
+  
+  # Map polygon click to select AUs
+  observeEvent(input$assessment_map_shape_click,{
+    au_click = input$assessment_map_shape_click$id
+    if(!is.null(au_click)){
+      if(au_click %in% reactive_objects$selected_aus){
+        reactive_objects$selected_aus=reactive_objects$selected_aus[!reactive_objects$selected_aus %in% au_click]
+      }else{
+        reactive_objects$selected_aus=append(reactive_objects$selected_aus, au_click)
+      }
+    }
+  })
+  
+  # Highlight AU polygon by adding new polygons via proxy
+  observeEvent(reactive_objects$selected_aus, ignoreNULL = F, ignoreInit=T, {
+    req(reactive_objects$au_asmnt_poly)
+    asmnt_map_proxy %>%
+      clearGroup(group='highlight') %>%
+      addPolygons(data=reactive_objects$au_asmnt_poly[reactive_objects$au_asmnt_poly$ASSESS_ID %in% reactive_objects$selected_aus,],
+                  group='highlight', options = pathOptions(pane = "highlight"), color='chartreuse', opacity = 0.75, fillOpacity = 0.4, weight = 10)
+  })
+  
+  # Clear selected AUs with clear_au action button
+  observeEvent(input$clear_au, {
+    reactive_objects$selected_aus=NULL
+  })
+  
+  # Generate data and criteria subsets (based on selected AUs) for analysis tools on button press 
+  observeEvent(input$build_tools,{
+    sel_sites=reactive_objects$site_asmnt$IR_MLID[reactive_objects$site_asmnt$ASSESS_ID %in% reactive_objects$selected_aus]
+    reactive_objects$sel_sites=sel_sites
+    reactive_objects$sel_data=subset(merged_data, IR_MLID %in% sel_sites)
+    reactive_objects$sel_crit=subset(criteria, IR_MLID %in% sel_sites)
+    showModal(modalDialog(title="Analysis tools ready.",size="l",easyClose=T,
+                          "Data and analysis tools ready. Scroll to 'Figures' and 'Data table' panels to review and plot data."))
+  })
+  
+  # Figures
+  
+  ## Mult sites one param
+  #Create parameter selection drop down (from non duplicated dataset)
+  output$sel_comparameter <- renderUI({
+    selectInput("sel_comparameter","Select Parameter", choices = c("",unique(reactive_objects$sel_data$R3172ParameterName)), selected = "")
+  })
+  
+  output$sel_compunit <- renderUI({
+    units = unique(reactive_objects$sel_data$IR_Unit[reactive_objects$sel_data$R3172ParameterName==input$sel_comparameter])
+    selectInput("sel_compunit","Select Unit", choices = c(units))
+  })
+  
+  output$sel_paramdate <- renderUI({
+    dates = as.character(unique(reactive_objects$sel_data$ActivityStartDate))
+    dates = as.Date(dates, "%Y-%m-%d")
+    sliderInput("sel_paramdate", "Select Date Range", min = min(dates), max = max(dates), value = c(min(dates),max(dates)))
+  })
+  
+  output$compare_sites <- renderUI({
+    if(input$compare_plottype=="Time Series"){
+      plotlyOutput("compare_sites_ts")
+      print("timeseries")
+    }
+    if(input$compare_plottype=="Boxplots"){
+      plotlyOutput("compare_sites_box")
+      print("boxplot")
+    }
+    if(input$compare_plottype=="Concentration Map"){
+      shinycssloaders::withSpinner(leaflet::leafletOutput("conc_map", height="500px"),size=2, color="#0080b7")
+    }
+  })
+  
+  observe({
+    if(!is.null(input$sel_compunit)){
+      data = reactive_objects$sel_data
+      data$ActivityStartDate = as.Date(as.character(data$ActivityStartDate), "%Y-%m-%d")
+      data = data[order(data$ActivityStartDate),]
+      data = data[data$R3172ParameterName==input$sel_comparameter&data$ActivityStartDate>=input$sel_paramdate[1]&data$ActivityStartDate<=input$sel_paramdate[2],]
+      print(head(data))
+      # convert units
+      units = unique(data$IR_Unit)
+      if(length(units)>1){
+        data$Plot_Unit = rep(input$sel_compunit, length(data$IR_Unit))
+        print(data)
+        figdata = wqTools::convertUnits(data, input_unit = "IR_Unit", target_unit = "Plot_Unit", value_var = "IR_Value", conv_val_col = "Plot_Value")
+        figdata = unique(figdata[,c("IR_MLID","R3172ParameterName","ActivityStartDate","Plot_Unit","Plot_Value")])
+      }else{
+        figdata = data
+        figdata$Plot_Unit = figdata$IR_Unit
+        figdata$Plot_Value = figdata$IR_Value
+      }
+      reactive_objects$fig_data = figdata
+      figdata <<- figdata
+    }
+  })
+  
+  #Plotly time series 
+  output$compare_sites_ts <- renderPlotly({
+    req(reactive_objects$fig_data)
+    print("test")
+    plotdata = reactive_objects$fig_data
+    title = as.character(plotdata$R3172ParameterName[1])
+    plot_ly(type = 'scatter', mode = 'lines+markers',x = plotdata$ActivityStartDate, y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID),
+            marker = list(size=10))%>%
+      layout(title = title,
+             titlefont = list(
+               family = "Arial, sans-serif"),
+             font = list(
+               family = "Arial, sans-serif"),
+             xaxis = list(title = "Site"),
+             yaxis = list(title = plotdata$Plot_Unit[1]))
+  })
+  
+  # Plotly boxplot
+  output$compare_sites_box <- renderPlotly({
+    req(reactive_objects$fig_data)
+    plotdata = reactive_objects$fig_data
+    title = as.character(plotdata$R3172ParameterName[1])
+    p = plot_ly(type = 'box', y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID))%>%
+      layout(title = title,
+             titlefont = list(
+               family = "Arial, sans-serif"),
+             font = list(
+               family = "Arial, sans-serif"),
+             xaxis = list(title = "Site"),
+             yaxis = list(title = plotdata$Plot_Unit[1]))
     
-	# Map polygon click to select an AU
-	observe({
-		reactive_objects$sel_au = input$aumap_shape_click$id
-	})
-	
-	# Map site click
-	observe({
-		reactive_objects$sel_site = input$aumap_marker_click$id
-	})
-	
-	# Table proxies
-	au_table_proxy = DT::dataTableProxy('AU_data')
-	site_table_proxy = DT::dataTableProxy('Site_data')
-	
-	# Clear table filter buttons
-	observeEvent(input$au_table_filter_clear, ignoreInit=T,{
-		au_table_proxy %>% DT::clearSearch()
-	})
-	
-	observeEvent(input$site_table_filter_clear, ignoreInit=T,{
-		site_table_proxy %>% DT::clearSearch()
-	})
-	
-	##Filter tables for map selected AU
-	observeEvent(reactive_objects$sel_au, ignoreInit=T, {
-		au_table_proxy %>% DT::clearSearch() %>% DT::selectRows(NULL)  %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
-		site_table_proxy %>% DT::clearSearch() %>% DT::selectRows(NULL) %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
-	})
-	
-	
-	# AU table row click
-	observeEvent(input$AU_data_rows_selected, {
-		reactive_objects$sel_au=reactive_objects$au_data_table[input$AU_data_rows_selected, "ASSESS_ID"]
-	})
-
-	# Map proxy
-	aumap_proxy=leaflet::leafletProxy("aumap")
-	
-	# Zoom to AU on au table click
-	observeEvent(reactive_objects$sel_au,{
-		sel_poly=reactive_objects$au_poly[reactive_objects$au_poly$ASSESS_ID %in% reactive_objects$sel_au,]
-		bbox=st_bbox(sel_poly)
-		aumap_proxy %>% leaflet::flyToBounds(lng1=paste(bbox[1]), lng2=paste(bbox[3]), lat1=paste(bbox[2]), lat2=paste(bbox[4]))
-	})
-
-	# Only show sites at a particular zoom
-    observeEvent(input$aumap_zoom,{
-      map_zoom <- input$aumap_zoom
-	  if(map_zoom<=8){
-        aumap_proxy %>% leaflet::hideGroup("Sites")
-      }else{aumap_proxy %>% leaflet::showGroup("Sites")}
+  })
+  
+  # Map proxy
+  conc_proxy = leaflet::leafletProxy("conc_map")
+  # map
+  session$onFlushed(once = T, function() {
+    output$conc_map <- leaflet::renderLeaflet({
+      req(reactive_objects$sel_data)
+      
+      # Set map bounds
+      data = reactive_objects$sel_data
+      sites = unique(data[,c("IR_MLID","IR_Lat","IR_Long")])
+      minlat = min(sites$IR_Lat)
+      maxlat = max(sites$IR_Lat)
+      minlong = min(sites$IR_Long)
+      maxlong = max(sites$IR_Long)
+      
+      # Map parameters
+      conc_map = wqTools::buildMap(plot_polys=TRUE, search="")
+      conc_map = leaflet::addLayersControl(conc_map,
+                                           position ="topleft",
+                                           baseGroups = c("Topo","Satellite"),overlayGroups = c("Sites", "Assessment units","Beneficial uses", "Site-specific standards"),
+                                           options = leaflet::layersControlOptions(collapsed = TRUE, autoZIndex=TRUE))
+      conc_map = fitBounds(conc_map, minlong, minlat, maxlong, maxlat)
+      conc_map=addMapPane(conc_map,"site_markers", zIndex = 450)
+      conc_map=hideGroup(conc_map, "Assessment units")
+      conc_map=hideGroup(conc_map, "Site-specific standards")
+      conc_map=hideGroup(conc_map, "Beneficial uses")
+      conc_map=removeMeasure(conc_map)
+      
+      conc_map = addCircleMarkers(conc_map, data = sites, lat=sites$IR_Lat, lng=sites$IR_Long, layerId = sites$IR_MLID,group="Sites",
+                                  weight = 2, fill = TRUE, opacity=0.95, fillOpacity = 0.5, color = "green", radius = 5, options = pathOptions(pane = "site_markers"))
+      
     })
-
-	# Reset map zoom button
-    observeEvent(input$reset_zoom,{
-		bbox=st_bbox(site_coords)
-		aumap_proxy %>% leaflet::flyToBounds(lng1=paste(bbox[1]), lng2=paste(bbox[3]), lat1=paste(bbox[2]), lat2=paste(bbox[4]))
-    })
-
-
-	# AU comment
-	observeEvent(input$au_comment, {
-		if(is.null(reactive_objects$sel_au)){
-			showModal(modalDialog(title="Error.",size="l",easyClose=T,
-				"Select an assessment unit to make a review comment.")
-			)
-		}
-		req(reactive_objects$sel_au)
-		
-		au_com_table=reactive_objects$au_data_table[reactive_objects$au_data_table$ASSESS_ID == reactive_objects$sel_au,]
-		reactive_objects$au_com_table=au_com_table
-		flag_choices=c("", "REJECT","ACCEPT","EDIT","RESEGMENT")
-		
-		showModal(
-			modalDialog(title="Make a comment.",easyClose=F, footer = NULL,
-				
-					DT::renderDT({
-						DT::datatable(
-							au_com_table, selection='single', rownames=FALSE, filter='none',
-							options = list(paging = FALSE, scrollX='600px', dom="t")
-						)
-					}),
-				
-					selectInput("reviewer", "Select reviewer", choices = reviewer_list, selected = input$whodunit),
-					selectInput("rev_flag", label="Reviewer flag", choices=flag_choices),
-					tags$textarea("Comment...", id = 'rev_comment', style = 'width:50%;'),
-					br(),
-					actionButton("rev_save", "Save", style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%'),
-					actionButton("rev_cancel", "Cancel", style='color: #fff; background-color: #337ab7; border-color: #2e6da4;font-size:120%')
-					
-				
-				#rhandsontable::rhandsontable(au_com_table,readOnly=TRUE, width = 600, height=600)%>%
-				#	rhandsontable::hot_col(col="ReviewerFlag",type="dropdown",readOnly=FALSE,source=flag_choices)%>%
-				#	rhandsontable::hot_col(col="ReviewerComment",readOnly=FALSE)
-
-			)
-		)
-	})
-
-	# Reviewer save button
-	observeEvent(input$rev_save, {
-		req(input$rev_flag)
-		rev_comment=input$rev_comment
-		#if(rev_comment=="Comment..."){rev_comment="No comment."}
-		au_review_cur=data.frame(reactive_objects$au_com_table, input$rev_flag, input$rev_comment)
-		au_table_cur=reactive_objects$au_data_table
-		au_table_cur=merge(au_table_cur, au_review_cur, all.x=T)
-		
-		au_table_cur=within(au_table_cur, {
-			ReviewerFlag[!is.na(input.rev_flag)]=as.character(input.rev_flag[!is.na(input.rev_flag)])
-			ReviewerComment[!is.na(input.rev_comment)]=as.character(input.rev_comment[!is.na(input.rev_comment)])
-			ReviewerComment[ReviewerComment=="Comment..."]="No comment."
-		})
-		
-		au_table_cur=au_table_cur[,!names(au_table_cur) %in% c("input.rev_flag","input.rev_comment")]
-				
-		reactive_objects$au_data_table=au_table_cur
-		
-		au_table_proxy %>% DT::clearSearch() %>% DT::selectRows(NULL)  %>% DT::updateSearch(keywords = list(global = "", columns=c("","",paste(reactive_objects$sel_au))))
-		
-		showModal(modalDialog(title="Saved", "Review saved", size="m", easyClose=T))
-		
-	})
-
-	
-	# Export comments
-
-	au_download=reactive({
-		as.data.frame(reactive_objects$au_data_table[reactive_objects$au_data_table$ReviewerFlag != "Review needed",])
-	})
-	
-	output$exp_rev <- downloadHandler(
-		filename = paste("reviews", Sys.Date(), ".csv", sep=""),
-		content = function(file) {
-			write.csv(au_download(), row.names=FALSE, file)
-		}
-	)
-
-
+  })
+  
+  # observe inputs to change map proxy
+  observe({
+    # Isolate data and map coordinates
+    if(!is.null(reactive_objects$fig_data)){
+      data = reactive_objects$fig_data
+      sites = unique(data[,c("IR_MLID","IR_Lat","IR_Long")])
+      #conc_sites = data[data$R3172ParameterName==input$sel_maparameter&data$ActivityStartDate>=input$sel_paramdate[1]&data$ActivityStartDate<=input$sel_paramdate[2],]
+      avg_site_val = round(tapply(data$Plot_Value, data$IR_MLID, mean),2)
+      conc_radius = ((avg_site_val-mean(avg_site_val))/sd(avg_site_val)+3)*3
+      conc_ncount = tapply(data$Plot_Value, data$IR_MLID, length)
+      conc_radii = data.frame(IR_MLID = names(conc_radius), Avg_IR_Value = avg_site_val, Radius = conc_radius, Ncount = conc_ncount)
+      site_data = merge(sites, conc_radii)
+      
+      conc_proxy%>%clearMarkers()%>%addCircleMarkers(data = site_data, lat=site_data$IR_Lat, lng=site_data$IR_Long, layerId = site_data$IR_MLID,group="Sites",
+                                                     weight = 2, fill = TRUE, opacity=0.95, fillOpacity = 0.5, radius = as.numeric(site_data$Radius), options = pathOptions(pane = "site_markers"),
+                                                     popup = paste0(
+                                                       "MLID: ", site_data$IR_MLID,
+                                                       "<br> Average Parameter Value: ", site_data$Avg_IR_Value,
+                                                       "<br> Sample Count: ", as.character(site_data$Ncount)))
+    }
+    
+  })
+  
+  ##Mult params one site
+  # Site selection
+  output$sel_param_site <- renderUI({
+    param_site = as.character(unique(reactive_objects$sel_data$IR_MLID))
+    selectInput("sel_param_site","Select Site", choices = c("",param_site), selected = "")
+  })
+  
+  # Parameter 1 selection based on site
+  output$sel_param1 <- renderUI({
+    reactive_objects$params_1 = unique(reactive_objects$sel_data$R3172ParameterName[reactive_objects$sel_data$IR_MLID==input$sel_param_site])
+    selectInput("sel_param1", "Select Parameter 1", choices = c("",reactive_objects$params_1), selected = "")
+  })
+  
+  # Parameter 2 selection based on parameter 1
+  output$sel_param2 <- renderUI({
+    params_2 = reactive_objects$params_1[reactive_objects$params_1!=input$sel_param1]
+    selectInput("sel_param2", "Select Parameter 2", choices = c("",params_2), selected = "")
+  })
+  
+  # Plot
+  output$compare_params <- renderPlotly({
+    req(input$sel_param1)
+    data = reactive_objects$sel_data
+    plotdata = data[data$IR_MLID==input$sel_param_site&data$R3172ParameterName%in%c(input$sel_param1, input$sel_param2),]
+    plotdata = plotdata[order(plotdata$ActivityStartDate),]
+    param1 = plotdata[plotdata$R3172ParameterName==input$sel_param1,]
+    param2 = plotdata[plotdata$R3172ParameterName==input$sel_param2,]
+    
+    p = plot_ly(type = 'scatter', mode = 'lines+markers')%>%
+      layout(title = param1$IR_MLID[1],
+             titlefont = list(
+               family = "Arial, sans-serif"),
+             font = list(
+               family = "Arial, sans-serif"),
+             yaxis = list(title = param1$IR_Unit[1]),
+             yaxis2 = list(side="right", overlaying = "y",title = param2$IR_Unit[1]))%>%
+      add_trace(x = param1$ActivityStartDate, y = param1$IR_Value, name = param1$R3172ParameterName[1], marker = list(size = 10))%>%
+      add_trace(x = param2$ActivityStartDate, y = param2$IR_Value, name = param2$R3172ParameterName[1], marker = list(size = 10), yaxis = "y2")
+  })
+  
+  ##Spatial Relationships between site/params
+  # output$sel_maparameter <- renderUI({
+  #   selectInput("sel_maparameter","Select Parameter", choices = c("",unique(reactive_objects$sel_data$R3172ParameterName)), selected = "")
+  # })
+  
+  # Data table output
+  output$dt=DT::renderDT({
+    req(reactive_objects$sel_data)
+    DT::datatable(data.frame(lapply(reactive_objects$sel_data, as.factor)),
+                  selection='none', rownames=FALSE, filter="top",
+                  options = list(scrollY = '600px', paging = TRUE, scrollX=TRUE)
+    )
+  })
+  
+  # Export data table
+  output$exp_dt <- downloadHandler(
+    filename=paste0('exported-data-', Sys.Date(),'.xlsx'),
+    content = function(file) {writexl::write_xlsx(
+      list(data=reactive_objects$sel_data),
+      path = file, format_headers=F, col_names=T)}
+  )
+  
+  # Download WQP data for sites
+  observe({
+    if(!is.null(reactive_objects$sel_sites)){
+      reactive_objects$wqp_url=wqTools::readWQP(start_date=input$StartDate, end_date=input$EndDate, type='result', siteid=reactive_objects$sel_sites, url_only=T)
+    }
+  })
+  output$wqp_url <-renderUI(a(href=paste0(reactive_objects$wqp_url),"Download WQP data",target="_blank"))
+  
+  
 }
 
 ## run app
 shinyApp(ui = ui, server = server)
+
+
+
 
