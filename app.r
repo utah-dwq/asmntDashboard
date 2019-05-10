@@ -38,13 +38,16 @@ ui <-fluidPage(
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('map-marked-alt'),"Review map"),
 				fluidRow(
-					actionButton('clear_au', 'Clear selected AU(s)', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('trash-alt')),
-					actionButton('build_tools', 'Build analysis tools', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('toolbox'))
+					column(3, fluidRow(
+						actionButton('clear_au', 'Clear selected AU(s)', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('trash-alt')),
+					 	actionButton('build_tools', 'Build analysis tools', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('toolbox'))
+					)),
+					column(2, shinyWidgets::materialSwitch(inputId = "au_hover", label="Show AU assessments on hover", value = TRUE, right=T, status='primary'))
 					#column(1),
 					#column(3, shinyWidgets::pickerInput("site_types","Site types to map:", choices=site_type_choices, multiple=T, options = list(`actions-box` = TRUE, size = 10, `selected-text-format` = "count > 3"))),
 					#column(3, uiOutput("review_reasons")),
 					#column(3, uiOutput('ml_types')),
-					#column(2, shinyWidgets::materialSwitch(inputId = "auto_zoom", label="Auto-zoom on", value = TRUE, right=T, status='primary'))
+					
 				),
 				br(),
 				
@@ -65,8 +68,8 @@ ui <-fluidPage(
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('database'), "Download raw data from WQP"), 
 				fluidRow(
-					column(2, h4('Start date'), dateInput('StartDate', '', format='mm/dd/yyyy')),
-					column(2, h4('End date'), dateInput('EndDate', '', format='mm/dd/yyyy'))
+					column(2, h4('Start date'), dateInput('start_date', '', format='mm/dd/yyyy', value='10/01/2008')),
+					column(2, h4('End date'), dateInput('end_date', '', format='mm/dd/yyyy'))
 				),
 				uiOutput('wqp_url')
 				#actionButton('dwnld_wqp', 'Download WQP data', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%', icon=icon('download'))
@@ -95,12 +98,30 @@ observeEvent(input$import_assessments,{
 	reactive_objects$au_asmnt_poly=inputs$au_asmnt_poly
 	reactive_objects$site_asmnt=inputs$site_asmnt
 	reactive_objects$selected_aus=vector()
+	reactive_objects$rejected_sites=inputs$rejected_sites
+	reactive_objects$na_sites=inputs$na_sites
+	reactive_objects$master_site=inputs$master_site
+})
+
+# Add html label to au_asmnt_poly
+observe({
+	req(reactive_objects$au_asmnt_poly)
+	reactive_objects$au_asmnt_poly=within(reactive_objects$au_asmnt_poly, {
+		lab=paste0(
+					'<p>', 
+					"AU name: ", AU_NAME,
+					'<br />', "AU ID: ", ASSESS_ID,
+					'<br />', "Assessment: ", AssessCat,
+					'<br />', "Impaired params: ", Impaired_params,
+					'<br />', "ID w/ exceedance params: ", idE_params)
+	
+	})
 })
 
 # Map output
 output$assessment_map=leaflet::renderLeaflet({
 	req(reactive_objects$au_asmnt_poly, reactive_objects$site_asmnt)
-	asmntMap(reactive_objects$au_asmnt_poly, reactive_objects$site_asmnt)
+	asmntMap(reactive_objects$au_asmnt_poly, reactive_objects$site_asmnt, reactive_objects$na_sites, reactive_objects$rejected_sites)
 })
 asmnt_map_proxy=leafletProxy('assessment_map')
 
@@ -113,6 +134,20 @@ observeEvent(input$assessment_map_shape_click,{
 		}else{
 			reactive_objects$selected_aus=append(reactive_objects$selected_aus, au_click)
 		}
+	}
+})
+
+# Turn off AU assessment hover info w/ switch
+observeEvent(input$au_hover, ignoreInit=T, {
+	if(input$au_hover == FALSE){
+		asmnt_map_proxy %>%
+			clearGroup(group='Assessment units') %>%
+			addPolygons(data=reactive_objects$au_asmnt_poly,group="Assessment units",smoothFactor=4,fillOpacity = 0.1, layerId=~ASSESS_ID, weight=3,color=~col, options = pathOptions(pane = "au_poly"))
+	}else{
+		asmnt_map_proxy %>%
+			clearGroup(group='Assessment units') %>%
+			addPolygons(data=reactive_objects$au_asmnt_poly,group="Assessment units",smoothFactor=4,fillOpacity = 0.1, layerId=~ASSESS_ID, weight=3,color=~col, options = pathOptions(pane = "au_poly"),
+				label=lapply(reactive_objects$au_asmnt_poly$lab, HTML))
 	}
 })
 
@@ -161,7 +196,13 @@ output$exp_dt <- downloadHandler(
 # Download WQP data for sites
 observe({
 	if(!is.null(reactive_objects$sel_sites)){
-		reactive_objects$wqp_url=wqTools::readWQP(start_date=input$StartDate, end_date=input$EndDate, type='result', siteid=reactive_objects$sel_sites, url_only=T)
+		siteids=reactive_objects$sel_sites
+		orig_siteids=unique(reactive_objects$master_site[,c('IR_MLID','MonitoringLocationIdentifier')])
+		orig_siteids=subset(orig_siteids, IR_MLID %in% siteids)
+		orig_siteids=as.vector(unique(orig_siteids[,'MonitoringLocationIdentifier']))
+		siteids=unique(append(as.character(siteids), orig_siteids))
+		#print(siteids)
+		reactive_objects$wqp_url=wqTools::readWQP(start_date=input$start_date, end_date=input$end_date, type='result', siteid=siteids, url_only=T)
 	}
 })
 output$wqp_url <-renderUI(a(href=paste0(reactive_objects$wqp_url),"Download WQP data",target="_blank"))

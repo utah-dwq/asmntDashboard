@@ -1,12 +1,18 @@
 initialDataProc=function(site_use_param_asmnt){
 
-# Load data & criteria
-load('data/prepped_merged_data.Rdata')
-
 # Initial data processing
 ## Site level rollups
 site_param_asmnt=irTools::rollUp(list(site_use_param_asmnt), group_vars=c('IR_MLID','IR_MLNAME','IR_Lat','IR_Long','ASSESS_ID','AU_NAME','R3172ParameterName'), cat_var="AssessCat", print=F, expand_uses=F)
 site_asmnt=irTools::rollUp(list(site_use_param_asmnt), group_vars=c('IR_MLID','IR_MLNAME','IR_Lat','IR_Long','ASSESS_ID','AU_NAME'), cat_var="AssessCat", print=F, expand_uses=F)
+
+## Read master site list
+master_site=as.data.frame(readxl::read_excel('data/master-site-reviews-2019-05-03.xlsx', 'sites'))
+
+## ID rejected site locations
+rejected_sites=subset(master_site, IR_FLAG=="REJECT")
+
+## ID accepted sites w/o assessments
+na_sites=subset(master_site, IR_FLAG=="ACCEPT" & !IR_MLID %in% site_asmnt$IR_MLID)
 
 ### Generate impaired params wide list
 sites_ns=subset(site_param_asmnt, AssessCat=='NS')
@@ -94,7 +100,7 @@ au_poly=merge(au_poly, au_asmnt, all.x=T)
 au_poly=assignAsmntCols(au_poly)
 site_asmnt=assignAsmntCols(site_asmnt)
 
-return(list(au_asmnt_poly=au_poly, site_asmnt=site_asmnt))
+return(list(au_asmnt_poly=au_poly, site_asmnt=site_asmnt, rejected_sites=rejected_sites, na_sites=na_sites, master_site=master_site))
 
 }
 
