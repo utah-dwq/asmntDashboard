@@ -6,6 +6,7 @@ load('figures-test-data.Rdata')
 ui <-fluidPage(
 #figuresUI <- function(id){
 	#ns <- NS(id)
+#}
 	
 	fluidRow(
 		column(2,fluidRow(uiOutput('sel_param1'), uiOutput('sel_units1'))),
@@ -22,15 +23,8 @@ ui <-fluidPage(
 		),
 		tabPanel("Multiple parameters"
 			#fluidRow(plotlyOutput("compare_params"))
-		),
-		tabPanel("Concentration Map"
-			#br(),
-			#fluidRow(br(),column(3,fluidRow(uiOutput("sel_maparameter", style = "margin-left: 25px")),
-			#				fluidRow(uiOutput("sel_paramdate", style = "margin-left: 25px"))),
-			#			column(9, shinycssloaders::withSpinner(leaflet::leafletOutput("conc_map", height="500px"),size=2, color="#0080b7")))
 		)
 	)
-#}
 )
 
 server <- function(input, output, session){
@@ -73,7 +67,7 @@ server <- function(input, output, session){
 			param1=wqTools::convertUnits(param1, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param1$plot_value=param1$IR_Value}
 		param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
-		param1<<-param1
+		#param1<<-param1
 		
 		## Criteria
 		crit1=subset(sel_crit, R3172ParameterName == input$sel_param1)
@@ -82,7 +76,7 @@ server <- function(input, output, session){
 			crit1$target_unit=input$sel_units1
 			crit1=wqTools::convertUnits(crit1, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
 		}else{crit1$plot_value=crit1$NumericCriterion}
-		crit1<<-crit1
+		#crit1<<-crit1
 		
 	})
 
@@ -98,17 +92,26 @@ server <- function(input, output, session){
 		param2=unique(param2[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
 		#param2<<-param2
 		
-		## Criteria
-		crit2=subset(sel_crit, R3172ParameterName == input$sel_param2)
-		### Convert units if multiple available
-		if(length(unique(crit2$CriterionUnits)>1)){
-			crit2$target_unit=input$sel_units2
-			crit2=wqTools::convertUnits(crit2, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
-		}else{crit2$plot_value=crit2$NumericCriterion}
-		crit2<<-crit2
+		### Criteria
+		#crit2=subset(sel_crit, R3172ParameterName == input$sel_param2)
+		#### Convert units if multiple available
+		#if(length(unique(crit2$CriterionUnits)>1)){
+		#	crit2$target_unit=input$sel_units2
+		#	crit2=wqTools::convertUnits(crit2, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
+		#}else{crit2$plot_value=crit2$NumericCriterion}
+		#crit2<<-crit2
 	}})	
 	
-	
+
+
+
+
+
+
+
+
+
+
 	
 #	output$compare_sites <- renderPlotly({
 #	req(input$sel_comparameter)
