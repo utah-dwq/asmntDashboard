@@ -167,24 +167,32 @@ output$sel_comparameter <- renderUI({
 })
 
 output$sel_compunit <- renderUI({
-  
-  selectInput("sel_compunit","Select Unit", choices = c("",unique(reactive_objects$sel_data$R3172ParameterName)), selected = "")
+  units = unique(reactive_objects$sel_data$IR_Unit[reactive_objects$sel_data$R3172ParameterName==input$sel_comparameter])
+  selectInput("sel_compunit","Select Unit", choices = c(units))
 })
 
 output$compare_sites <- renderPlotly({
   req(input$sel_comparameter)
 
-  plotdata = reactive_objects$sel_data
-  plotdata = plotdata[order(plotdata$ActivityStartDate),]
-  plotdata = plotdata[plotdata$R3172ParameterName==input$sel_comparameter,]
+  data = reactive_objects$sel_data
+  data = data[order(data$ActivityStartDate),]
+  data = data[data$R3172ParameterName==input$sel_comparameter,]
+  
+  # convert units
+  units = unique(reactive_objects$sel_data$IR_Unit[reactive_objects$sel_data$R3172ParameterName==input$sel_comparameter])
+  if(length(units)>1){
+    data$Plot_Unit = rep(input$sel_compunit, length(data$IR_Unit))
+    plotdata = wqTools::convertUnits(data, input_unit = "IR_Unit", target_unit = "Plot_Unit", value_var = "IR_Value", conv_val_col = "Plot_Value")
+    plotdata = unique(plotdata[,c("IR_MLID","R3172ParameterName","ActivityStartDate","Plot_Unit","Plot_Value")])
+  }else{
+      plotdata = data
+      plotdata$Plot_Unit = plotdata$IR_Unit
+      plotdata$Plot_Value = plotdata$IR_Value
+  }
 
-  if(is.na(plotdata$IR_Unit[1])){
-    unit = ""
-  }else{unit = plotdata$IR_Unit[1]}
   title = as.character(plotdata$R3172ParameterName[1])
-
   if(input$compare_plottype=="Time Series"){
-    p = plot_ly(type = 'scatter', mode = 'lines+markers',x = plotdata$ActivityStartDate, y = plotdata$IR_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID),
+    p = plot_ly(type = 'scatter', mode = 'lines+markers',x = plotdata$ActivityStartDate, y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID),
                 marker = list(size=10))%>%
       layout(title = title,
              titlefont = list(
@@ -192,16 +200,16 @@ output$compare_sites <- renderPlotly({
              font = list(
                family = "Arial, sans-serif"),
              xaxis = list(title = "Site"),
-             yaxis = list(title = unit))
+             yaxis = list(title = plotdata$Plot_Unit[1]))
   }else{
-    p = plot_ly(type = 'box', y = plotdata$IR_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID))%>%
+    p = plot_ly(type = 'box', y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID))%>%
       layout(title = title,
              titlefont = list(
                family = "Arial, sans-serif"),
              font = list(
                family = "Arial, sans-serif"),
              xaxis = list(title = "Site"),
-             yaxis = list(title = unit))
+             yaxis = list(title = plotdata$Plot_Unit[1]))
   }
 
 })
