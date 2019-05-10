@@ -387,7 +387,11 @@ observe({
 		orig_siteids=as.vector(unique(orig_siteids[,'MonitoringLocationIdentifier']))
 		siteids=unique(append(as.character(siteids), orig_siteids))
 		#print(siteids)
-		reactive_objects$wqp_url=wqTools::readWQP(start_date=input$start_date, end_date=input$end_date, type='result', siteid=siteids, url_only=T)
+		wqp_url=wqTools::readWQP(start_date=input$start_date, end_date=input$end_date, type='result', siteid=siteids, url_only=T)
+		wqp_url=gsub("\\?", "#", wqp_url)
+		wqp_url=gsub("https://www.waterqualitydata.us/data/Result/search", "https://www.waterqualitydata.us/portal/", wqp_url)
+		wqp_url=gsub("&zip=no", "", wqp_url)
+		reactive_objects$wqp_url=wqp_url
 	}
 })
 output$wqp_url <-renderUI(a(href=paste0(reactive_objects$wqp_url),"Download WQP data",target="_blank"))
