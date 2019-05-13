@@ -14,6 +14,7 @@ library(plotly)
 # Modules/functions
 source('modules/initialDataProc.R')
 source('modules/asmntMap.R')
+source('modules/figuresMod.R')
 
 # Load data & criteria
 load('data/prepped_merged_data.Rdata')
@@ -55,7 +56,8 @@ ui <-fluidPage(
 				# Map
 				fluidRow(shinycssloaders::withSpinner(leaflet::leafletOutput("assessment_map", height="600px"),size=2, color="#0080b7"))
 			),
-			bsCollapsePanel(list(icon('plus-circle'), icon('chart-bar'), "Figures")
+			bsCollapsePanel(list(icon('plus-circle'), icon('chart-bar'), "Figures"),
+				figuresModUI('figures')
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('table'), "Data table"),
 				fluidRow(downloadButton('exp_dt', label = "Export data table", icon='download', style='color: #fff; background-color: #337ab7; border-color: #2e6da4%')),
@@ -171,6 +173,11 @@ observeEvent(input$build_tools,{
 })
 
 
+# Figures
+observe({
+	req(reactive_objects$sel_data, reactive_objects$sel_crit)
+	figures=callModule(module=figuresMod, id='figures', sel_data=reactive_objects$sel_data, sel_crit=reactive_objects$sel_crit)
+})
 
 # Data table output
 output$dt=DT::renderDT({
