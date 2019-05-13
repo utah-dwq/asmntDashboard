@@ -71,7 +71,7 @@ server <- function(input, output, session){
 			param1=wqTools::convertUnits(param1, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param1$plot_value=param1$IR_Value}
 		reactive_objects$param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
-		param1<<-param1
+		#param1<<-param1
 		
 		## Criteria
 		crit1=subset(sel_crit, R3172ParameterName == input$sel_param1)
@@ -95,15 +95,6 @@ server <- function(input, output, session){
 			param2=wqTools::convertUnits(param2, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param2$plot_value=param2$IR_Value}
 		reactive_objects$param2=unique(param2[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
-		#param2<<-param2
-		### Criteria
-		#crit2=subset(sel_crit, R3172ParameterName == input$sel_param2)
-		#### Convert units if multiple available
-		#if(length(unique(crit2$CriterionUnits)>1)){
-		#	crit2$target_unit=input$sel_units2
-		#	crit2=wqTools::convertUnits(crit2, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
-		#}else{crit2$plot_value=crit2$NumericCriterion}
-		#crit2<<-crit2
 	}})	
 	
 
@@ -189,8 +180,6 @@ observe({
 			})
 		}
 		if(input$compare_plottype=="Concentration Map"){
-		
-		
 		}
 	})
 })
