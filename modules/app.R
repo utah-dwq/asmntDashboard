@@ -1,6 +1,6 @@
 # Figures module
 
-#setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard\\data')
+#setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard\\modules')
 load('figures-test-data.Rdata')
 
 ui <-fluidPage(
@@ -18,7 +18,8 @@ ui <-fluidPage(
 	),
 	tabsetPanel(id='tabs',
 		tabPanel('Multiple sites',
-			fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplots", "Concentration Map"), selected = "Time Series", inline = TRUE)))
+			fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplot", "Concentration Map"), selected = "Time Series", inline = TRUE))),
+			plotlyOutput('multi_site')
 			#fluidRow(plotlyOutput("compare_sites"))
 		),
 		tabPanel("Multiple parameters"
@@ -28,6 +29,9 @@ ui <-fluidPage(
 )
 
 server <- function(input, output, session){
+	# Empty reactive objects
+	reactive_objects=reactiveValues()
+	
 	
 	# Make sure numeric criterion is numeric
 	sel_crit$NumericCriterion=as.numeric(sel_crit$NumericCriterion)
@@ -66,7 +70,7 @@ server <- function(input, output, session){
 			param1$target_unit=input$sel_units1
 			param1=wqTools::convertUnits(param1, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param1$plot_value=param1$IR_Value}
-		param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
+		reactive_objects$param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
 		#param1<<-param1
 		
 		## Criteria
@@ -77,6 +81,7 @@ server <- function(input, output, session){
 			crit1=wqTools::convertUnits(crit1, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
 		}else{crit1$plot_value=crit1$NumericCriterion}
 		#crit1<<-crit1
+		reactive_objects$crit1<-crit1
 		
 	})
 
@@ -89,9 +94,8 @@ server <- function(input, output, session){
 			param2$target_unit=input$sel_units2
 			param2=wqTools::convertUnits(param2, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param2$plot_value=param2$IR_Value}
-		param2=unique(param2[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
+		reactive_objects$param2=unique(param2[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
 		#param2<<-param2
-		
 		### Criteria
 		#crit2=subset(sel_crit, R3172ParameterName == input$sel_param2)
 		#### Convert units if multiple available
@@ -103,38 +107,59 @@ server <- function(input, output, session){
 	}})	
 	
 
-
-
-
-
-
-
-
+observe({
+	req(reactive_objects$param1, reactive_objects$crit1)
+	title = input$sel_param1
+	ylab = paste0(input$sel_param1,' (', input$sel_units1,')')
+	
+	if(input$compare_plottype=="Time Series"){
+		output$multi_site=renderPlotly({
+			plot_ly(data=reactive_objects$param1, type = 'scatter', mode = 'lines+markers',x = ~as.Date(ActivityStartDate), y = ~plot_value, color = ~IR_MLID, marker = list(size=10))%>%
+					layout(title = title,
+							titlefont = list(
+							family = "Arial, sans-serif"),
+							font = list(
+							family = "Arial, sans-serif"),
+							xaxis = list(title = "Date"),
+							yaxis = list(title = ylab)
+					)
+		})
+	}
+	if(input$compare_plottype=="Boxplot"){
+		output$multi_site=renderPlotly({
+			plot_ly(data=reactive_objects$param1, type = 'box', y = ~plot_value, color = ~IR_MLID)%>%
+				layout(title = title,
+					titlefont = list(
+					family = "Arial, sans-serif"),
+					font = list(
+					family = "Arial, sans-serif"),
+					xaxis = list(title = "Site"),
+					yaxis = list(title = ylab)
+				) %>% 
+				config(displaylogo = FALSE, collaborate = FALSE,
+					modeBarButtonsToRemove = c(
+						'sendDataToCloud',
+						'hoverClosestCartesian',
+						'hoverCompareCartesian',
+						'lasso2d',
+						'select2d'
+					)
+				)
+		})
+	}
+	if(input$compare_plottype=="Concentration Map"){
+	
+	
+	}
+})
 
 
 	
-#	output$compare_sites <- renderPlotly({
-#	req(input$sel_comparameter)
-#	
-#	data = reactive_objects$sel_data
-#	data = data[order(data$ActivityStartDate),]
-#	data = data[data$R3172ParameterName==input$sel_comparameter,]
-#	
-#	# convert units
-#	units = unique(reactive_objects$sel_data$IR_Unit[reactive_objects$sel_data$R3172ParameterName==input$sel_comparameter])
-#	if(length(units)>1){
-#		data$Plot_Unit = rep(input$sel_compunit, length(data$IR_Unit))
-#		plotdata = wqTools::convertUnits(data, input_unit = "IR_Unit", target_unit = "Plot_Unit", value_var = "IR_Value", conv_val_col = "Plot_Value")
-#		plotdata = unique(plotdata[,c("IR_MLID","R3172ParameterName","ActivityStartDate","Plot_Unit","Plot_Value")])
-#	}else{
-#		plotdata = data
-#		plotdata$Plot_Unit = plotdata$IR_Unit
-#		plotdata$Plot_Value = plotdata$IR_Value
-#	}
-#	
-#	title = as.character(plotdata$R3172ParameterName[1])
+#output$compare_sites <- renderPlotly({
+#	req(reactive_objects$param1, reactive_objects$crit1)
+#	title = input$sel_param1
 #	if(input$compare_plottype=="Time Series"){
-#		p = plot_ly(type = 'scatter', mode = 'lines+markers',x = plotdata$ActivityStartDate, y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID),
+#		p = plot_ly(type = 'scatter', mode = 'lines+markers',x = reactive_objects$param1$ActivityStartDate, y = reactive_objects$param1$Plot_Value, color = reactive_objects$param1$IR_MLID, transforms = list(type = 'groupby', groups = reactive_objects$param1$IR_MLID),
 #					marker = list(size=10))%>%
 #		layout(title = title,
 #				titlefont = list(
@@ -142,19 +167,19 @@ server <- function(input, output, session){
 #				font = list(
 #				family = "Arial, sans-serif"),
 #				xaxis = list(title = "Site"),
-#				yaxis = list(title = plotdata$Plot_Unit[1]))
-#	}else{
-#		p = plot_ly(type = 'box', y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID))%>%
-#		layout(title = title,
-#				titlefont = list(
-#				family = "Arial, sans-serif"),
-#				font = list(
-#				family = "Arial, sans-serif"),
-#				xaxis = list(title = "Site"),
-#				yaxis = list(title = plotdata$Plot_Unit[1]))
-#	}
-#	
-#	})
+#				yaxis = list(title = reactive_objects$param1$target_unit[1]))
+#	}#else{
+#	p = plot_ly(type = 'box', y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID))%>%
+#	layout(title = title,
+#			titlefont = list(
+#			family = "Arial, sans-serif"),
+#			font = list(
+#			family = "Arial, sans-serif"),
+#			xaxis = list(title = "Site"),
+#			yaxis = list(title = plotdata$target_unit[1]))
+#}
+#
+#})
 #	
 #	##Mult params one site
 #	# Site selection
