@@ -71,7 +71,7 @@ server <- function(input, output, session){
 			param1=wqTools::convertUnits(param1, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param1$plot_value=param1$IR_Value}
 		reactive_objects$param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
-		#param1<<-param1
+		param1<<-param1
 		
 		## Criteria
 		crit1=subset(sel_crit, R3172ParameterName == input$sel_param1)
@@ -111,46 +111,88 @@ observe({
 	req(reactive_objects$param1, reactive_objects$crit1)
 	title = input$sel_param1
 	ylab = paste0(input$sel_param1,' (', input$sel_units1,')')
+	mlid_len=length(unique(reactive_objects$param1$IR_MLID))
+	au_len=length(unique(reactive_objects$param1$ASSESS_ID))
+	mlid_vis=as.list(append(rep(T,mlid_len), rep(F, au_len)))
+	au_vis=as.list(append(rep(F,mlid_len), rep(T, au_len)))
 	
-	if(input$compare_plottype=="Time Series"){
-		output$multi_site=renderPlotly({
-			plot_ly(data=reactive_objects$param1, type = 'scatter', mode = 'lines+markers',x = ~as.Date(ActivityStartDate), y = ~plot_value, color = ~IR_MLID, marker = list(size=10))%>%
+	suppressWarnings({
+		if(input$compare_plottype=="Time Series"){
+			output$multi_site=renderPlotly({
+				plot_ly(type = 'scatter', mode = 'lines+markers', x=as.Date(reactive_objects$param1$ActivityStartDate), y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, marker = list(size=10), visible=T) %>%
+					add_trace(type='scatter', mode = 'markers',x = as.Date(reactive_objects$param1$ActivityStartDate), y=reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, marker = list(size=10), visible=F) %>%
+						layout(title = title,
+								titlefont = list(
+								family = "Arial, sans-serif"),
+								font = list(
+								family = "Arial, sans-serif"),
+								xaxis = list(title = "Date"),
+								yaxis = list(title = ylab),
+							updatemenus = list(
+								list(
+									buttons = list(
+										list(method = "update", label='Group by site', 
+											args = list(list(visible = mlid_vis))
+										),
+										list(method = "update", label='Group by AU', 
+											args = list(list(visible = au_vis))
+										)
+									)
+								)
+							)
+						) %>% 
+					config(displaylogo = FALSE, collaborate = FALSE,
+						modeBarButtonsToRemove = c(
+							'sendDataToCloud',
+							'hoverClosestCartesian',
+							'hoverCompareCartesian',
+							'lasso2d',
+							'select2d'
+						)
+					)
+	
+			})
+		}
+		if(input$compare_plottype=="Boxplot"){
+			output$multi_site=renderPlotly({
+				plot_ly(data=reactive_objects$param1, type = 'box', y = ~plot_value, color = ~IR_MLID, visible=T) %>%
+					add_trace(type = 'box', y = reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, visible=F) %>%
 					layout(title = title,
-							titlefont = list(
-							family = "Arial, sans-serif"),
-							font = list(
-							family = "Arial, sans-serif"),
-							xaxis = list(title = "Date"),
-							yaxis = list(title = ylab)
+						titlefont = list(
+						family = "Arial, sans-serif"),
+						font = list(
+						family = "Arial, sans-serif"),
+						xaxis = list(title = "Site"),
+						yaxis = list(title = ylab),
+						updatemenus = list(
+							list(
+								buttons = list(
+									list(method = "update", label='Group by site', 
+										args = list(list(visible = mlid_vis))
+									),
+									list(method = "update", label='Group by AU', 
+										args = list(list(visible = au_vis))
+									)
+								)
+							)
+						)
+					) %>% 
+					config(displaylogo = FALSE, collaborate = FALSE,
+						modeBarButtonsToRemove = c(
+							'sendDataToCloud',
+							'hoverClosestCartesian',
+							'hoverCompareCartesian',
+							'lasso2d',
+							'select2d'
+						)
 					)
-		})
-	}
-	if(input$compare_plottype=="Boxplot"){
-		output$multi_site=renderPlotly({
-			plot_ly(data=reactive_objects$param1, type = 'box', y = ~plot_value, color = ~IR_MLID)%>%
-				layout(title = title,
-					titlefont = list(
-					family = "Arial, sans-serif"),
-					font = list(
-					family = "Arial, sans-serif"),
-					xaxis = list(title = "Site"),
-					yaxis = list(title = ylab)
-				) %>% 
-				config(displaylogo = FALSE, collaborate = FALSE,
-					modeBarButtonsToRemove = c(
-						'sendDataToCloud',
-						'hoverClosestCartesian',
-						'hoverCompareCartesian',
-						'lasso2d',
-						'select2d'
-					)
-				)
-		})
-	}
-	if(input$compare_plottype=="Concentration Map"){
-	
-	
-	}
+			})
+		}
+		if(input$compare_plottype=="Concentration Map"){
+		
+		
+		}
+	})
 })
 
 
