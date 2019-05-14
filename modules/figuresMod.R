@@ -28,9 +28,9 @@ figuresModUI <- function(id){
 		tabsetPanel(id=ns('tabs'),
 			tabPanel('Multiple sites',
 				fluidRow(column(3,radioButtons(ns("compare_plottype"), "Plot type", choices = c("Time series","Boxplot", "Concentration map"), selected = "Time series", inline = TRUE))),
-				conditionalPanel(paste0("input['", ns("compare_plottype"),"'] == 'Time series'"), plotlyOutput(ns('multi_site_ts'), height='700px')),
-				conditionalPanel(paste0("input['", ns("compare_plottype"),"'] == 'Boxplot'"), plotlyOutput(ns('multi_site_bp'), height='700px')),
-				conditionalPanel(paste0("input['", ns("compare_plottype"),"'] == 'Concentration map'"), shinycssloaders::withSpinner(leafletOutput(ns('conc_map'), height='700px'),size=2, color="#0080b7"))
+				conditionalPanel(paste0("input['", ns("compare_plottype"),"'] == 'Time series'"), plotlyOutput(ns('multi_site_ts'), height='600px')),
+				conditionalPanel(paste0("input['", ns("compare_plottype"),"'] == 'Boxplot'"), plotlyOutput(ns('multi_site_bp'), height='600px')),
+				conditionalPanel(paste0("input['", ns("compare_plottype"),"'] == 'Concentration map'"), shinycssloaders::withSpinner(leafletOutput(ns('conc_map'), height='600px'),size=2, color="#0080b7"))
 			),
 			tabPanel("Multiple parameters", 
 				plotlyOutput(ns("multi_param_ts"))
@@ -56,7 +56,7 @@ figuresMod <- function(input, output, session, sel_data, sel_crit){
 	# Select param 1
 	output$sel_param1 <- renderUI({
 		ns <- session$ns
-		selectInput(ns("sel_param1"),"Select parameter 1", choices = c(sel_data$R3172ParameterName))
+		selectInput(ns("sel_param1"),"Select parameter 1", choices = sel_data$R3172ParameterName[order(sel_data$R3172ParameterName)])
 	})
 	
 	# Select units 1
@@ -70,7 +70,7 @@ figuresMod <- function(input, output, session, sel_data, sel_crit){
 	output$sel_param2 <- renderUI({
 		ns <- session$ns
 		param_choices=sel_data$R3172ParameterName[! sel_data$R3172ParameterName %in% input$sel_param1]
-		selectInput(ns("sel_param2"),"Select parameter 2", choices = param_choices)
+		selectInput(ns("sel_param2"),"Select parameter 2", choices = param_choices[order(param_choices)])
 	})
 
 	# Select units 2

@@ -24,11 +24,17 @@ options(warn = -1)
 # User interface
 ui <-fluidPage(
 	# Header
+	#headerPanel(
+	#	title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85), target="_blank"),
+	#	tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="WQ Assessment Dashboard")
+	#),
 	headerPanel(
-		title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85), target="_blank"),
-		tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="WQ Assessment Dashboard")
+		title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo_draft.png', height = 125, width = 100*2.85*1.75), target="_blank"),
+		tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="DEMO: WQ Assessment Dashboard")
 	),
 
+	
+	
 	mainPanel(width=12,
 		bsCollapse(multiple=T,
 			bsCollapsePanel(list(icon('plus-circle'), icon('file-import'),"Import assessments file"), 
