@@ -20,10 +20,14 @@ ui <-fluidPage(
 	),
 	
 	fluidRow(
-		column(2,fluidRow(uiOutput('sel_param1'), uiOutput('sel_units1'))),
-		column(2,
-			conditionalPanel("input.tabs=='Multiple parameters'",
-				fluidRow(uiOutput('sel_param2'), uiOutput('sel_units2'))
+		column(2,uiOutput('sel_param1'), uiOutput('sel_units1')),
+		conditionalPanel("input.tabs=='Multiple parameters'",
+			column(2,
+				uiOutput('sel_param2'),
+				uiOutput('sel_units2')
+			),
+			column(2,
+				uiOutput('sel_site')
 			)
 		)
 	),
@@ -34,8 +38,8 @@ ui <-fluidPage(
 			conditionalPanel("input.compare_plottype == 'Boxplot'", plotlyOutput('multi_site_bp')),
 			conditionalPanel("input.compare_plottype == 'Concentration map'", shinycssloaders::withSpinner(leafletOutput('conc_map'),size=2, color="#0080b7"))
 		),
-		tabPanel("Multiple parameters"
-			#fluidRow(plotlyOutput("compare_params"))
+		tabPanel("Multiple parameters", 
+			plotlyOutput("multi_param_ts")
 		)
 	)
 )
@@ -104,9 +108,7 @@ server <- function(input, output, session){
 			crit1=wqTools::convertUnits(crit1, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
 		}else{crit1$plot_value=crit1$NumericCriterion}
 		crit1=crit1[order(crit1$ActivityStartDate),]
-		#crit1<<-crit1
 		reactive_objects$crit1<-crit1
-		
 	})
 
 	# Generate parameter 2 data & criteria (need to do criteria still)
@@ -127,18 +129,31 @@ server <- function(input, output, session){
 		req(reactive_objects$param1, reactive_objects$crit1)
 		reactive_objects$title = input$sel_param1
 		reactive_objects$ylab = paste0(input$sel_param1,' (', input$sel_units1,')')
+		reactive_objects$ylab2 = paste0(input$sel_param2,' (', input$sel_units2,')')
 		mlid_len=length(unique(reactive_objects$param1$IR_MLID))
 		au_len=length(unique(reactive_objects$param1$ASSESS_ID))
-		reactive_objects$mlid_vis=as.list(append(rep(T,mlid_len), rep(F, au_len)))
-		reactive_objects$au_vis=as.list(append(rep(F,mlid_len), rep(T, au_len)))
+		crit_plot=unique(reactive_objects$crit1[,c('ActivityStartDate','BeneficialUse','CriterionLabel','plot_value')])
+		crit_plot=within(crit_plot, {
+			label=paste(BeneficialUse, 'use', CriterionLabel, 'criterion')	
+			label=gsub(" NA", "", label)
+		})
+		reactive_objects$crit_plot=crit_plot
+		crit_len=length(unique(crit_plot$label))
+		mlid_vis=as.list(append(rep(T, mlid_len), rep(F, au_len)))
+		reactive_objects$mlid_vis=as.list(append(mlid_vis, rep('legendonly',crit_len)))
+		au_vis=as.list(append(rep(F,mlid_len), rep(T, au_len)))
+		reactive_objects$au_vis=as.list(append(au_vis, rep('legendonly',crit_len)))	
 	})
 
 	# Multi-site time series
 	output$multi_site_ts=renderPlotly({
 		req(reactive_objects$param1, input$sel_units1, reactive_objects$crit1, reactive_objects$au_vis)
+		
 		if(all(!is.na(reactive_objects$param1$plot_value))){
-			plot_ly(type = 'scatter', mode = 'lines+markers', x=as.Date(reactive_objects$param1$ActivityStartDate), y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, marker = list(size=10), visible=T) %>%
-				add_trace(type='scatter', mode = 'markers',x = as.Date(reactive_objects$param1$ActivityStartDate), y=reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, marker = list(size=10), visible=F) %>%
+			plot_ly() %>%
+				add_trace(type = 'scatter', mode = 'lines+markers', x=as.Date(reactive_objects$param1$ActivityStartDate), y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, marker = list(size=10), visible=T) %>%
+				add_trace(type = 'scatter', mode = 'markers',x = as.Date(reactive_objects$param1$ActivityStartDate), y=reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, marker = list(size=10), visible=F) %>%
+				add_trace(type = 'scatter', mode='lines', x = as.Date(reactive_objects$crit_plot$ActivityStartDate), y=reactive_objects$crit_plot$plot_value, color = reactive_objects$crit_plot$label, visible='legendonly') %>%
 					layout(title = reactive_objects$title,
 							titlefont = list(
 							family = "Arial, sans-serif"),
@@ -174,6 +189,16 @@ server <- function(input, output, session){
 	# Multi site boxplot
 	output$multi_site_bp=renderPlotly({
 		req(reactive_objects$param1, input$sel_units1, reactive_objects$crit1, reactive_objects$au_vis)
+		crit_plot=reactive_objects$crit_plot
+		crit_plot<<-crit_plot
+		param1<<-reactive_objects$param1
+		crit_plot=unique(crit_plot[!is.na(crit_plot$plot_value),c('plot_value','label')])
+		crit_plot0=crit_plot
+		crit_plot0$x=0
+		crit_plot1=crit_plot
+		crit_plot1$x=1
+		crit_plot=rbind(crit_plot0,crit_plot1)
+		
 		if(all(!is.na(reactive_objects$param1$plot_value))){
 			plot_ly(type = 'box', y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, visible=T) %>%
 				add_trace(type = 'box', y = reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, visible=F) %>%
@@ -183,6 +208,7 @@ server <- function(input, output, session){
 					font = list(
 					family = "Arial, sans-serif"),
 					xaxis = list(title = "MLID"),
+					xaxis2 = list(overlaying = "x", zeroline=F, showticklabels = FALSE, showgrid = FALSE),
 					yaxis = list(title = reactive_objects$ylab),
 					updatemenus = list(
 						list(
@@ -196,7 +222,8 @@ server <- function(input, output, session){
 							)
 						)
 					)
-				) %>% 
+				) %>%
+				add_trace(type = 'scatter', mode='lines', x=crit_plot$x, y = crit_plot$plot_value, color = crit_plot$label, visible='legendonly', xaxis = "x2")%>%
 				config(displaylogo = FALSE, collaborate = FALSE,
 					modeBarButtonsToRemove = c(
 						'sendDataToCloud',
@@ -242,7 +269,7 @@ server <- function(input, output, session){
 	}
 
 
-	# Update map via proxy on param1 change
+	# Update concentration map via proxy on param1 change
 	observe({
 		req(reactive_objects$param1)
 		if(all(!is.na(reactive_objects$param1$plot_value))){
@@ -257,11 +284,11 @@ server <- function(input, output, session){
 			max_lat=max(sites$IR_Lat)*1.001
 			max_lng=max(sites$IR_Long)*1.001
 			leg_labs=c(signif(quantile(sites$plot_value, 0.10),3), signif(median(sites$plot_value),3), signif(quantile(sites$plot_value, 0.90),3))
-			leg_sizes=c(quantile(sites$radius, 0.10), median(sites$radius), quantile(sites$radius, 0.90))
+			leg_sizes=c(quantile(sites$radius, 0.10), median(sites$radius), quantile(sites$radius, 0.90))*2
 			conc_proxy%>%clearGroup('Sites') %>% clearControls() %>%
 				flyToBounds(min_lng,min_lat,max_lng,max_lat) %>%	
-				addCircleMarkers(data = sites, lat=~IR_Lat, lng=~IR_Long, group="Sites", layerId=~IR_MLID, color='blue',
-					radius = ~radius, weight = 2, fill = TRUE, opacity=0.95, fillOpacity = 0.5, options = pathOptions(pane = "site_markers"),
+				addCircleMarkers(data = sites, lat=~IR_Lat, lng=~IR_Long, group="Sites", layerId=~IR_MLID, color='blue', stroke=F, fillOpacity=0.5,
+					radius = ~radius, options = pathOptions(pane = "site_markers"),
 					popup = paste0(
 						"MLID: ", sites$IR_MLID,
 						"<br> ML name: ", sites$IR_MLNAME,
@@ -270,7 +297,47 @@ server <- function(input, output, session){
 				) %>%
 			addLegendCustom(colors = c("blue", "blue", "blue"), labels = leg_labs, sizes = leg_sizes, title=reactive_objects$ylab)
 		}
-	})	
+	})
+	
+	
+	# Multi-parameter time series
+	## Site selection
+	output$sel_site <- renderUI({
+		req(reactive_objects$param1,reactive_objects$param2)
+		param_site = as.character(unique(reactive_objects$param1$IR_MLID[reactive_objects$param1$IR_MLID %in% reactive_objects$param2$IR_MLID]))
+		selectInput("sel_site","Select Site", choices = param_site)
+	})
+
+	output$multi_param_ts=renderPlotly({
+		req(reactive_objects$param1, input$sel_units1, reactive_objects$param2, input$sel_units2, input$sel_site)
+		param1=reactive_objects$param1[reactive_objects$param1$IR_MLID %in% input$sel_site,]
+		param2=reactive_objects$param2[reactive_objects$param2$IR_MLID %in% input$sel_site,]
+		if(all(!is.na(reactive_objects$param1$plot_value)) & all(!is.na(reactive_objects$param2$plot_value))){
+			plot_ly(type = 'scatter', mode = 'lines+markers')%>%
+				layout(title = input$sel_site,
+					titlefont = list(
+					family = "Arial, sans-serif"),
+					font = list(
+					family = "Arial, sans-serif"),
+					xaxis = list(title = "Date"),
+					yaxis = list(title = reactive_objects$ylab),
+					yaxis2 = list(side="right", overlaying = "y",title = reactive_objects$ylab2)
+				) %>% 
+				add_trace(x = param1$ActivityStartDate, y = param1$plot_value, name = reactive_objects$ylab, marker = list(size = 10)) %>%
+				add_trace(x = param2$ActivityStartDate, y = param2$plot_value, name = reactive_objects$ylab2, marker = list(size = 10), yaxis = "y2") %>%
+				config(displaylogo = FALSE, collaborate = FALSE,
+					modeBarButtonsToRemove = c(
+						'sendDataToCloud',
+						'hoverClosestCartesian',
+						'hoverCompareCartesian',
+						'lasso2d',
+						'select2d'
+					)
+				)
+		}
+	})
+	
+	
 }
 
 
@@ -283,11 +350,6 @@ shinyApp(ui = ui, server = server)
 
 #	
 #	##Mult params one site
-#	# Site selection
-#	output$sel_param_site <- renderUI({
-#		param_site = as.character(unique(reactive_objects$sel_data$IR_MLID))
-#		selectInput("sel_param_site","Select Site", choices = c("",param_site), selected = "")
-#	})
 #	
 #	# Parameter 1 selection based on site
 #	output$sel_param1 <- renderUI({
@@ -310,17 +372,6 @@ shinyApp(ui = ui, server = server)
 #	param1 = plotdata[plotdata$R3172ParameterName==input$sel_param1,]
 #	param2 = plotdata[plotdata$R3172ParameterName==input$sel_param2,]
 #	
-#	p = plot_ly(type = 'scatter', mode = 'lines+markers')%>%
-#		layout(title = param1$IR_MLID[1],
-#			titlefont = list(
-#				family = "Arial, sans-serif"),
-#			font = list(
-#				family = "Arial, sans-serif"),
-#			yaxis = list(title = param1$IR_Unit[1]),
-#			yaxis2 = list(side="right", overlaying = "y",title = param2$IR_Unit[1]))%>%
-#		add_trace(x = param1$ActivityStartDate, y = param1$IR_Value, name = param1$R3172ParameterName[1], marker = list(size = 10))%>%
-#		add_trace(x = param2$ActivityStartDate, y = param2$IR_Value, name = param2$R3172ParameterName[1], marker = list(size = 10), yaxis = "y2")
-#	})
 #	
 #	##Spatial Relationships between site/params
 #	output$sel_maparameter <- renderUI({
@@ -333,14 +384,4 @@ shinyApp(ui = ui, server = server)
 #	sliderInput("sel_paramdate", "Select Date Range", min = min(dates), max = max(dates), value = c(min(dates),max(dates)))
 #	})
 #	
-#	# Map proxy
-#	
-#	
-#	
-#	
-#	
-#	
-#	
-#	
-
 

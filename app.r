@@ -32,11 +32,11 @@ ui <-fluidPage(
 	mainPanel(width=12,
 		bsCollapse(multiple=T,
 			bsCollapsePanel(list(icon('plus-circle'), icon('file-import'),"Import assessments file"), 
-				fluidRow(
-					column(2, fileInput("import_assessments", "Import assessment file", accept=".csv")),
-					uiOutput('ex_url')
+				#fluidRow(
+					column(2, fileInput("import_assessments", "Import assessment file", accept=".csv"),
+					uiOutput('ex_url'))
 					#column(2, actionButton('example_input', icon=icon('question'), label='', style = "margin-top: 25px; color: #fff; background-color: #337ab7; border-color: #2e6da4%"))
-				)
+				#)
 			),
 			bsCollapsePanel(list(icon('plus-circle'), icon('map-marked-alt'),"Review map"),
 				fluidRow(
@@ -170,6 +170,9 @@ observeEvent(input$build_tools,{
 	reactive_objects$sel_crit=subset(criteria, IR_MLID %in% sel_sites)
 	showModal(modalDialog(title="Analysis tools ready.",size="l",easyClose=T,
 		"Data and analysis tools ready. Scroll to 'Figures' and 'Data table' panels to review and plot data."))
+	#sel_data<<-reactive_objects$sel_data
+	#sel_crit<<-reactive_objects$sel_crit
+	
 })
 
 
