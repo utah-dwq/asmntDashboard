@@ -2,11 +2,22 @@
 
 #setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard\\modules')
 load('figures-test-data.Rdata')
+library(leaflet)
+library(wqTools)
 
 ui <-fluidPage(
 #figuresUI <- function(id){
 	#ns <- NS(id)
 #}
+	
+	tags$style(type = "text/css", "html, body {width:100%;height:100%}",
+		".leaflet .legend i{
+		border-radius: 50%;
+		width: 10px;
+		height: 10px;
+		margin-top: 4px;
+		}"
+	),
 	
 	fluidRow(
 		column(2,fluidRow(uiOutput('sel_param1'), uiOutput('sel_units1'))),
@@ -18,9 +29,10 @@ ui <-fluidPage(
 	),
 	tabsetPanel(id='tabs',
 		tabPanel('Multiple sites',
-			fluidRow(column(3,radioButtons("compare_plottype", "Plot Type", choices = c("Time Series","Boxplot", "Concentration Map"), selected = "Time Series", inline = TRUE))),
-			plotlyOutput('multi_site')
-			#fluidRow(plotlyOutput("compare_sites"))
+			fluidRow(column(3,radioButtons("compare_plottype", "Plot type", choices = c("Time series","Boxplot", "Concentration map"), selected = "Time series", inline = TRUE))),
+			conditionalPanel("input.compare_plottype == 'Time series'", plotlyOutput('multi_site_ts')),
+			conditionalPanel("input.compare_plottype == 'Boxplot'", plotlyOutput('multi_site_bp')),
+			conditionalPanel("input.compare_plottype == 'Concentration map'", shinycssloaders::withSpinner(leafletOutput('conc_map'),size=2, color="#0080b7"))
 		),
 		tabPanel("Multiple parameters"
 			#fluidRow(plotlyOutput("compare_params"))
@@ -28,7 +40,17 @@ ui <-fluidPage(
 	)
 )
 
+
+
+shinycssloaders::withSpinner(leaflet::leafletOutput("map", height="600px"),size=2, color="#0080b7")
+
+
+
 server <- function(input, output, session){
+	# Date formats
+	sel_data$ActivityStartDate=as.Date(sel_data$ActivityStartDate)
+	sel_crit$ActivityStartDate=as.Date(sel_crit$ActivityStartDate)
+	
 	# Empty reactive objects
 	reactive_objects=reactiveValues()
 	
@@ -70,8 +92,9 @@ server <- function(input, output, session){
 			param1$target_unit=input$sel_units1
 			param1=wqTools::convertUnits(param1, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param1$plot_value=param1$IR_Value}
+		param1=param1[order(param1$ActivityStartDate),]
 		reactive_objects$param1=unique(param1[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
-		#param1<<-param1
+		
 		
 		## Criteria
 		crit1=subset(sel_crit, R3172ParameterName == input$sel_param1)
@@ -80,6 +103,7 @@ server <- function(input, output, session){
 			crit1$target_unit=input$sel_units1
 			crit1=wqTools::convertUnits(crit1, input_units='CriterionUnits', target_units = "target_unit", value_var='NumericCriterion', conv_val_col='plot_value')
 		}else{crit1$plot_value=crit1$NumericCriterion}
+		crit1=crit1[order(crit1$ActivityStartDate),]
 		#crit1<<-crit1
 		reactive_objects$crit1<-crit1
 		
@@ -94,123 +118,169 @@ server <- function(input, output, session){
 			param2$target_unit=input$sel_units2
 			param2=wqTools::convertUnits(param2, input_units='IR_Unit', target_units = "target_unit", value_var='IR_Value', conv_val_col='plot_value')
 		}else{param2$plot_value=param2$IR_Value}
+		param2=param2[order(param2$ActivityStartDate),]
 		reactive_objects$param2=unique(param2[,c('IR_MLID','ActivityStartDate','IR_Lat','IR_Long','R3172ParameterName','plot_value','target_unit','IR_MLNAME','IR_DetCond','IR_Fraction','ASSESS_ID','AU_NAME','AU_Type','BEN_CLASS')])
 	}})	
 	
+	# Multi-site figure labels & visibilities
+	observe({
+		req(reactive_objects$param1, reactive_objects$crit1)
+		reactive_objects$title = input$sel_param1
+		reactive_objects$ylab = paste0(input$sel_param1,' (', input$sel_units1,')')
+		mlid_len=length(unique(reactive_objects$param1$IR_MLID))
+		au_len=length(unique(reactive_objects$param1$ASSESS_ID))
+		reactive_objects$mlid_vis=as.list(append(rep(T,mlid_len), rep(F, au_len)))
+		reactive_objects$au_vis=as.list(append(rep(F,mlid_len), rep(T, au_len)))
+	})
 
-observe({
-	req(reactive_objects$param1, reactive_objects$crit1)
-	title = input$sel_param1
-	ylab = paste0(input$sel_param1,' (', input$sel_units1,')')
-	mlid_len=length(unique(reactive_objects$param1$IR_MLID))
-	au_len=length(unique(reactive_objects$param1$ASSESS_ID))
-	mlid_vis=as.list(append(rep(T,mlid_len), rep(F, au_len)))
-	au_vis=as.list(append(rep(F,mlid_len), rep(T, au_len)))
-	
-	suppressWarnings({
-		if(input$compare_plottype=="Time Series"){
-			output$multi_site=renderPlotly({
-				plot_ly(type = 'scatter', mode = 'lines+markers', x=as.Date(reactive_objects$param1$ActivityStartDate), y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, marker = list(size=10), visible=T) %>%
-					add_trace(type='scatter', mode = 'markers',x = as.Date(reactive_objects$param1$ActivityStartDate), y=reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, marker = list(size=10), visible=F) %>%
-						layout(title = title,
-								titlefont = list(
-								family = "Arial, sans-serif"),
-								font = list(
-								family = "Arial, sans-serif"),
-								xaxis = list(title = "Date"),
-								yaxis = list(title = ylab),
-							updatemenus = list(
-								list(
-									buttons = list(
-										list(method = "update", label='Group by site', 
-											args = list(list(visible = mlid_vis))
-										),
-										list(method = "update", label='Group by AU', 
-											args = list(list(visible = au_vis))
-										)
-									)
-								)
-							)
-						) %>% 
-					config(displaylogo = FALSE, collaborate = FALSE,
-						modeBarButtonsToRemove = c(
-							'sendDataToCloud',
-							'hoverClosestCartesian',
-							'hoverCompareCartesian',
-							'lasso2d',
-							'select2d'
-						)
-					)
-	
-			})
-		}
-		if(input$compare_plottype=="Boxplot"){
-			output$multi_site=renderPlotly({
-				plot_ly(data=reactive_objects$param1, type = 'box', y = ~plot_value, color = ~IR_MLID, visible=T) %>%
-					add_trace(type = 'box', y = reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, visible=F) %>%
-					layout(title = title,
-						titlefont = list(
-						family = "Arial, sans-serif"),
-						font = list(
-						family = "Arial, sans-serif"),
-						xaxis = list(title = "Site"),
-						yaxis = list(title = ylab),
+	# Multi-site time series
+	output$multi_site_ts=renderPlotly({
+		req(reactive_objects$param1, input$sel_units1, reactive_objects$crit1, reactive_objects$au_vis)
+		if(all(!is.na(reactive_objects$param1$plot_value))){
+			plot_ly(type = 'scatter', mode = 'lines+markers', x=as.Date(reactive_objects$param1$ActivityStartDate), y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, marker = list(size=10), visible=T) %>%
+				add_trace(type='scatter', mode = 'markers',x = as.Date(reactive_objects$param1$ActivityStartDate), y=reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, marker = list(size=10), visible=F) %>%
+					layout(title = reactive_objects$title,
+							titlefont = list(
+							family = "Arial, sans-serif"),
+							font = list(
+							family = "Arial, sans-serif"),
+							xaxis = list(title = "Date"),
+							yaxis = list(title = reactive_objects$ylab),
 						updatemenus = list(
 							list(
 								buttons = list(
 									list(method = "update", label='Group by site', 
-										args = list(list(visible = mlid_vis))
+										args = list(list(visible = reactive_objects$mlid_vis))
 									),
 									list(method = "update", label='Group by AU', 
-										args = list(list(visible = au_vis))
+										args = list(list(visible = reactive_objects$au_vis))
 									)
 								)
 							)
 						)
 					) %>% 
-					config(displaylogo = FALSE, collaborate = FALSE,
-						modeBarButtonsToRemove = c(
-							'sendDataToCloud',
-							'hoverClosestCartesian',
-							'hoverCompareCartesian',
-							'lasso2d',
-							'select2d'
-						)
+				config(displaylogo = FALSE, collaborate = FALSE,
+					modeBarButtonsToRemove = c(
+						'sendDataToCloud',
+						'hoverClosestCartesian',
+						'hoverCompareCartesian',
+						'lasso2d',
+						'select2d'
 					)
-			})
-		}
-		if(input$compare_plottype=="Concentration Map"){
+				)
 		}
 	})
-})
 
+	# Multi site boxplot
+	output$multi_site_bp=renderPlotly({
+		req(reactive_objects$param1, input$sel_units1, reactive_objects$crit1, reactive_objects$au_vis)
+		if(all(!is.na(reactive_objects$param1$plot_value))){
+			plot_ly(type = 'box', y = reactive_objects$param1$plot_value, color = reactive_objects$param1$IR_MLID, visible=T) %>%
+				add_trace(type = 'box', y = reactive_objects$param1$plot_value, color = reactive_objects$param1$ASSESS_ID, visible=F) %>%
+				layout(title = reactive_objects$title,
+					titlefont = list(
+					family = "Arial, sans-serif"),
+					font = list(
+					family = "Arial, sans-serif"),
+					xaxis = list(title = "MLID"),
+					yaxis = list(title = reactive_objects$ylab),
+					updatemenus = list(
+						list(
+							buttons = list(
+								list(method = "update", label='Group by site', 
+									args = list(list(visible = reactive_objects$mlid_vis))
+								),
+								list(method = "update", label='Group by AU', 
+									args = list(list(visible = reactive_objects$au_vis), list(xaxis = list(title = 'Assessment unit ID')))
+								)
+							)
+						)
+					)
+				) %>% 
+				config(displaylogo = FALSE, collaborate = FALSE,
+					modeBarButtonsToRemove = c(
+						'sendDataToCloud',
+						'hoverClosestCartesian',
+						'hoverCompareCartesian',
+						'lasso2d',
+						'select2d'
+					)
+				)
+		}
+	})
 
+		
 	
-#output$compare_sites <- renderPlotly({
-#	req(reactive_objects$param1, reactive_objects$crit1)
-#	title = input$sel_param1
-#	if(input$compare_plottype=="Time Series"){
-#		p = plot_ly(type = 'scatter', mode = 'lines+markers',x = reactive_objects$param1$ActivityStartDate, y = reactive_objects$param1$Plot_Value, color = reactive_objects$param1$IR_MLID, transforms = list(type = 'groupby', groups = reactive_objects$param1$IR_MLID),
-#					marker = list(size=10))%>%
-#		layout(title = title,
-#				titlefont = list(
-#				family = "Arial, sans-serif"),
-#				font = list(
-#				family = "Arial, sans-serif"),
-#				xaxis = list(title = "Site"),
-#				yaxis = list(title = reactive_objects$param1$target_unit[1]))
-#	}#else{
-#	p = plot_ly(type = 'box', y = plotdata$Plot_Value, color = plotdata$IR_MLID, transforms = list(type = 'groupby', groups = plotdata$IR_MLID))%>%
-#	layout(title = title,
-#			titlefont = list(
-#			family = "Arial, sans-serif"),
-#			font = list(
-#			family = "Arial, sans-serif"),
-#			xaxis = list(title = "Site"),
-#			yaxis = list(title = plotdata$target_unit[1]))
-#}
-#
-#})
+	# Concentration map
+	session$onFlushed(once = T, function() {
+		observeEvent(input$sel_units1, ignoreInit=T, once=T,{	
+			output$conc_map <- leaflet::renderLeaflet({
+				
+				# Map parameters
+				conc_map = wqTools::buildMap(plot_polys=TRUE, search="")
+				conc_map = leaflet::addLayersControl(conc_map,
+					position ="topleft",
+					baseGroups = c("Topo","Satellite"),overlayGroups = c("Sites", "Assessment units","Beneficial uses", "Site-specific standards"),
+					options = leaflet::layersControlOptions(collapsed = TRUE, autoZIndex=TRUE))
+				conc_map=addMapPane(conc_map,"site_markers", zIndex = 450)
+				conc_map=hideGroup(conc_map, "Assessment units")
+				conc_map=hideGroup(conc_map, "Site-specific standards")
+				conc_map=hideGroup(conc_map, "Beneficial uses")
+				conc_map=removeMeasure(conc_map)
+			})
+		})
+	})
+
+	# Map proxy
+	conc_proxy = leaflet::leafletProxy("conc_map")
+
+	# Custom leaflet legend (re-size circles)
+    addLegendCustom <- function(map, colors, labels, sizes, opacity = 0.5, title = NULL){
+		colorAdditions <- paste0(colors, "; width:", sizes, "px; height:", sizes, "px")
+		labelAdditions <- paste0("<div style='display: inline-block;height: ", sizes, "px;margin-top: 4px;line-height: ", sizes, "px;'>", labels, "</div>")
+		return(addLegend(map, colors = colorAdditions, labels = labelAdditions, opacity = opacity, title = title))
+	}
+
+
+	# Update map via proxy on param1 change
+	observe({
+		req(reactive_objects$param1)
+		if(all(!is.na(reactive_objects$param1$plot_value))){
+			sites=reactive_objects$param1
+			count=aggregate(plot_value~IR_MLID+IR_Lat+IR_Long+target_unit, sites, FUN='length')
+			names(count)[names(count)=='plot_value'] = 'count'
+			sites=aggregate(plot_value~IR_MLID+IR_MLNAME+IR_Lat+IR_Long+target_unit, sites, FUN='mean')
+			sites=merge(sites,count,all.x=T)
+			sites$radius=scales::rescale(sites$plot_value, c(5,35))
+			min_lat=min(sites$IR_Lat)*0.999
+			min_lng=min(sites$IR_Long)*0.999
+			max_lat=max(sites$IR_Lat)*1.001
+			max_lng=max(sites$IR_Long)*1.001
+			leg_labs=c(signif(quantile(sites$plot_value, 0.10),3), signif(median(sites$plot_value),3), signif(quantile(sites$plot_value, 0.90),3))
+			leg_sizes=c(quantile(sites$radius, 0.10), median(sites$radius), quantile(sites$radius, 0.90))
+			conc_proxy%>%clearGroup('Sites') %>% clearControls() %>%
+				flyToBounds(min_lng,min_lat,max_lng,max_lat) %>%	
+				addCircleMarkers(data = sites, lat=~IR_Lat, lng=~IR_Long, group="Sites", layerId=~IR_MLID, color='blue',
+					radius = ~radius, weight = 2, fill = TRUE, opacity=0.95, fillOpacity = 0.5, options = pathOptions(pane = "site_markers"),
+					popup = paste0(
+						"MLID: ", sites$IR_MLID,
+						"<br> ML name: ", sites$IR_MLNAME,
+						"<br> Average Parameter Value: ", sites$plot_value,
+						"<br> Sample Count: ", sites$count)
+				) %>%
+			addLegendCustom(colors = c("blue", "blue", "blue"), labels = leg_labs, sizes = leg_sizes, title=reactive_objects$ylab)
+		}
+	})	
+}
+
+
+
+
+# run app
+shinyApp(ui = ui, server = server)
+
+
+
 #	
 #	##Mult params one site
 #	# Site selection
@@ -272,67 +342,5 @@ observe({
 #	
 #	
 #	
-#	conc_proxy = leaflet::leafletProxy("conc_map")
-#	# map
-#	session$onFlushed(once = T, function() {
-#	output$conc_map <- leaflet::renderLeaflet({
-#		req(reactive_objects$sel_data)
-#	
-#		# Set map bounds
-#		data = reactive_objects$sel_data
-#		sites = unique(data[,c("IR_MLID","IR_Lat","IR_Long")])
-#		minlat = min(sites$IR_Lat)
-#		maxlat = max(sites$IR_Lat)
-#		minlong = min(sites$IR_Long)
-#		maxlong = max(sites$IR_Long)
-#	
-#		# Map parameters
-#		conc_map = wqTools::buildMap(plot_polys=TRUE, search="")
-#		conc_map = leaflet::addLayersControl(conc_map,
-#											position ="topleft",
-#											baseGroups = c("Topo","Satellite"),overlayGroups = c("Sites", "Assessment units","Beneficial uses", "Site-specific standards"),
-#											options = leaflet::layersControlOptions(collapsed = TRUE, autoZIndex=TRUE))
-#		conc_map = fitBounds(conc_map, minlong, minlat, maxlong, maxlat)
-#		conc_map=addMapPane(conc_map,"site_markers", zIndex = 450)
-#		conc_map=hideGroup(conc_map, "Assessment units")
-#		conc_map=hideGroup(conc_map, "Site-specific standards")
-#		conc_map=hideGroup(conc_map, "Beneficial uses")
-#		conc_map=removeMeasure(conc_map)
-#	
-#		conc_map = addCircleMarkers(conc_map, data = sites, lat=sites$IR_Lat, lng=sites$IR_Long, layerId = sites$IR_MLID,group="Sites",
-#									weight = 2, fill = TRUE, opacity=0.95, fillOpacity = 0.5, color = "green", radius = 5, options = pathOptions(pane = "site_markers"))
-#	
-#	})
-#	})
-#	
-#	# observe inputs to change map proxy
-#	observe({
-#	req(input$sel_maparameter)
-#	# Isolate data and map coordinates
-#	if(!is.null(reactive_objects$sel_data)){
-#	data = reactive_objects$sel_data
-#	data$ActivityStartDate = as.Date(data$ActivityStartDate, "%Y-%m-%d")
-#	sites = unique(data[,c("IR_MLID","IR_Lat","IR_Long")])
-#	conc_sites = data[data$R3172ParameterName==input$sel_maparameter&data$ActivityStartDate>=input$sel_paramdate[1]&data$ActivityStartDate<=input$sel_paramdate[2],]
-#	avg_site_val = round(tapply(conc_sites$IR_Value, conc_sites$IR_MLID, mean),2)
-#	conc_radius = ((avg_site_val-mean(avg_site_val))/sd(avg_site_val)+3)*3
-#	conc_ncount = tapply(conc_sites$IR_Value, conc_sites$IR_MLID, length)
-#	conc_radii = data.frame(IR_MLID = names(conc_radius), Avg_IR_Value = avg_site_val, Radius = conc_radius, Ncount = conc_ncount)
-#	site_data = merge(sites, conc_radii)
-#	
-#	conc_proxy%>%clearMarkers()%>%addCircleMarkers(data = site_data, lat=site_data$IR_Lat, lng=site_data$IR_Long, layerId = site_data$IR_MLID,group="Sites",
-#													weight = 2, fill = TRUE, opacity=0.95, fillOpacity = 0.5, radius = as.numeric(site_data$Radius), options = pathOptions(pane = "site_markers"),
-#													popup = paste0(
-#														"MLID: ", site_data$IR_MLID,
-#														"<br> Average Parameter Value: ", site_data$Avg_IR_Value,
-#														"<br> Sample Count: ", as.character(site_data$Ncount)))
-#	}
-#	
-#	})
-}
 
-
-
-## run app
-shinyApp(ui = ui, server = server)
 
