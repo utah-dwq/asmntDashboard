@@ -3,10 +3,12 @@
 
 # Packages
 library(wqTools)
+library(irTools)
 library(leaflet)
 library(shinyBS)
-library(irTools)
 library(plotly)
+library(sf)
+library(rgdal)
 
 #setwd('C:\\Users\\jvander\\Documents\\R\\asmntDashboard')
 #site_use_param_asmnt=read.csv('data/site-use-param-asmnt.csv')
@@ -28,13 +30,11 @@ ui <-fluidPage(
 	#	title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo.png', height = 75, width = 75*2.85), target="_blank"),
 	#	tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="WQ Assessment Dashboard")
 	#),
-	headerPanel(
-		title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo_draft.png', height = 125, width = 100*2.85*1.75), target="_blank"),
-		tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="DEMO: WQ Assessment Dashboard")
-	),
+  headerPanel(
+  	title=tags$a(href='https://deq.utah.gov/division-water-quality/',tags$img(src='deq_dwq_logo_draft.png', height = 125, width = 100*2.85*1.75), target="_blank"),
+  	tags$head(tags$link(rel = "icon", type = "image/png", href = "dwq_logo_small.png"), windowTitle="WQ Assessment Dashboard")
+  ),
 
-	
-	
 	mainPanel(width=12,
 		bsCollapse(multiple=T,
 			bsCollapsePanel(list(icon('plus-circle'), icon('file-import'),"Import assessments file"), 
@@ -176,8 +176,8 @@ observeEvent(input$build_tools,{
 	reactive_objects$sel_crit=subset(criteria, IR_MLID %in% sel_sites)
 	showModal(modalDialog(title="Analysis tools ready.",size="l",easyClose=T,
 		"Data and analysis tools ready. Scroll to 'Figures' and 'Data table' panels to review and plot data."))
-	#sel_data<<-reactive_objects$sel_data
-	#sel_crit<<-reactive_objects$sel_crit
+	sel_data<<-reactive_objects$sel_data
+	sel_crit<<-reactive_objects$sel_crit
 	
 })
 

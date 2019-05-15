@@ -127,9 +127,9 @@ figuresMod <- function(input, output, session, sel_data, sel_crit){
 		reactive_objects$ylab2 = paste0(input$sel_param2,' (', input$sel_units2,')')
 		mlid_len=length(unique(reactive_objects$param1$IR_MLID))
 		au_len=length(unique(reactive_objects$param1$ASSESS_ID))
-		crit_plot=unique(reactive_objects$crit1[,c('ActivityStartDate','BeneficialUse','CriterionLabel','plot_value')])
+		crit_plot=unique(reactive_objects$crit1[,c('ActivityStartDate','BeneficialUse','CriterionLabel','CriterionType','plot_value')])
 		crit_plot=within(crit_plot, {
-			label=paste(BeneficialUse, 'use', CriterionLabel, 'criterion')	
+			label=paste(BeneficialUse, 'use', CriterionLabel, CriterionType, 'criterion')	
 			label=gsub(" NA", "", label)
 		})
 		reactive_objects$crit_plot=crit_plot
